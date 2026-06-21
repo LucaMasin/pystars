@@ -1,14 +1,40 @@
 [project]
 name = "pystars"
 version = "0.1.0"
-description = "Add your description here"
+description = "Automated significance testing for common biological and life sciences data."
 readme = "README.md"
 authors = [
     { name = "Luca Masin", email = "luca.masin@kuleuven.be" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pandas>=3.0.3",
+    "pingouin>=0.6.1",
+    "rich>=15.0.0",
+    "scikit-posthocs>=0.14.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.410",
+    "pytest>=9.1.1",
+    "ruff>=0.15.18",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
