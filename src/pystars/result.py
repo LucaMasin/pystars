@@ -37,6 +37,10 @@ class TestResult:
     pairwise: pd.DataFrame | None = None
     details: pd.DataFrame | None = None
     extra: dict[str, Any] | None = None
+    p_adjusted: float | None = None
+    p_adjust_method: str | None = None
+    p_adjust_alpha: float | None = None
+    reject: bool | None = None
 
     # Prevent pytest from collecting this dataclass as a test class.
     __test__ = False
@@ -49,6 +53,14 @@ class TestResult:
             "statistic": self.statistic,
             "p_value": self.p_value,
         }
+        if self.p_adjusted is not None:
+            row["p_adjusted"] = self.p_adjusted
+        if self.reject is not None:
+            row["reject"] = self.reject
+        if self.p_adjust_method is not None:
+            row["p_adjust_method"] = self.p_adjust_method
+        if self.p_adjust_alpha is not None:
+            row["p_adjust_alpha"] = self.p_adjust_alpha
         row.update(_flatten(self.effect_size))
         if self.assumptions:
             for prefix, sub in self.assumptions.items():
@@ -72,6 +84,10 @@ class TestResult:
             f"Statistic: {self._fmt_statistic()}",
             f"p-value: {self._fmt_p(self.p_value)}",
         ]
+        if self.p_adjusted is not None:
+            lines.append(
+                f"adjusted p-value ({self.p_adjust_method}): {self._fmt_p(self.p_adjusted)}"
+            )
         if self.effect_size:
             es_parts = []
             for k, v in self.effect_size.items():
@@ -105,6 +121,13 @@ class TestResult:
         table.add_row("Test", self.test_name)
         table.add_row("Statistic", self._fmt_statistic())
         table.add_row("p-value", self._fmt_p(self.p_value))
+        if self.p_adjusted is not None:
+            table.add_row(
+                f"adjusted p-value ({self.p_adjust_method})",
+                self._fmt_p(self.p_adjusted),
+            )
+        if self.reject is not None:
+            table.add_row("reject", str(self.reject))
         if self.effect_size:
             for k, v in self.effect_size.items():
                 if isinstance(v, list | tuple):
@@ -195,13 +218,25 @@ def _fmt_cell(v: Any) -> str:
     return str(v)
 
 
-def to_dataframe(results: TestResult | Iterable[TestResult]) -> pd.DataFrame:
+def to_dataframe(
+    results: TestResult | Iterable[TestResult],
+    *,
+    p_adjust: str | None = None,
+    alpha: float = 0.05,
+) -> pd.DataFrame:
     """Convert one or more :class:`TestResult` objects into a concatenated tidy dataframe.
 
     Columns are the union of all result columns; missing values are filled with NaN.
+    Pass ``p_adjust`` to attach corrected p-values across the provided results.
     """
     if isinstance(results, TestResult):
         results = [results]
+    else:
+        results = list(results)
+    if p_adjust is not None:
+        from pystars.corrections import adjust_results
+
+        results = adjust_results(results, method=p_adjust, alpha=alpha)
     frames = [r.to_dataframe() for r in results]
     if not frames:
         return pd.DataFrame()

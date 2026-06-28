@@ -20,6 +20,7 @@ src/pystars/
   assumptions.py       # _check_normality / _check_equal_variance + public wrappers
   tests_continuous.py  # ttest, mannwhitney, wilcoxon, anova, kruskal, anova_twoway
   posthoc.py           # posthoc_tukey, posthoc_games_howell, posthoc_dunn
+  corrections.py       # batch and pairwise multiple-comparison corrections
   result.py            # TestResult dataclass + to_dataframe/summary/__rich__
   dispatcher.py        # test() walks the flowchart
   __init__.py          # public re-exports
@@ -77,7 +78,9 @@ the dispatcher routes to the non-parametric branch.
 `TestResult` carries `test_name`, `statistic`, `p_value`, `effect_size` (dict),
 `assumptions` (dict or None), `posthoc` (TestResult or list or None),
 `pairwise` (DataFrame for post-hoc tables), `details` (DataFrame for ANOVA
-tables / per-group normality), and `extra` (free-form metadata).
+tables / per-group normality), `extra` (free-form metadata), and optional
+multiple-comparison fields (`p_adjusted`, `p_adjust_method`, `p_adjust_alpha`,
+`reject`).
 
 `to_dataframe()` flattens nested dicts (effect sizes, assumptions) into
 columns; list values like `CI95%` expand into `CI95%_0`, `CI95%_1`. The
@@ -112,12 +115,12 @@ module-level `to_dataframe()` concatenates several results with a column union.
 - **Phase 1 (done):** continuous tests — t-test (Student/Welch/paired),
   Mann-Whitney, Wilcoxon, one-way ANOVA, Welch ANOVA, Kruskal-Wallis, two-way
   ANOVA, post-hoc (Tukey / Games-Howell / Dunn), assumption checks, long/wide
-  input, dataframe export, rich printing, auto-dispatcher.
+  input, dataframe export, rich printing, auto-dispatcher, batch and pairwise
+  multiple-comparison correction.
 - **Phase 2:** counts (Poisson / negative binomial regression with offset),
   proportions (Fisher's exact, logistic regression, beta-binomial).
 - **Phase 3:** survival (lifelines: Kaplan-Meier + log-rank, Cox regression),
-  mixed-effects models for nested cell/axon/image data, batch
-  multiple-comparison correction (Holm / Benjamini-Hochberg) across many tests.
+  mixed-effects models for nested cell/axon/image data.
 
 ## Test Driven Development (TDD)
 

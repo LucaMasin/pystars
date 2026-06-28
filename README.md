@@ -130,6 +130,24 @@ Combine several results into one table:
 pystars.to_dataframe([result1, result2, result3])
 ```
 
+### Multiple-comparison corrections
+
+When you run many primary tests, correct their p-values with Holm, Bonferroni,
+Sidak, Benjamini-Hochberg FDR, or Benjamini-Yekutieli FDR:
+
+```python
+results = [pystars.test(df, value=feature, group="group") for feature in features]
+
+# Attach corrected p-values to TestResult objects.
+adjusted = pystars.adjust_results(results, method="fdr_bh")
+
+# Or export directly to a dataframe with correction columns.
+table = pystars.to_dataframe(results, p_adjust="fdr_bh")
+```
+
+Use `pystars.adjust_pairwise(...)` to apply the same correction helpers to an
+arbitrary pairwise comparison table with a p-value column.
+
 ### Rich printing
 
 `result.show()` renders a rich panel with the test summary, the assumptions
@@ -151,12 +169,12 @@ Minimal features required:
 - [x] Offer the ability to take in both long and wide data formats, and convert between them as needed.
 - [x] Export the results of the tests as a pandas dataframe that is both friendly for the user and as an input for programmatic use.
 - [x] Offer rich printing of the results, including a summary of the test performed, the assumptions checked, and the results of the test.
+- [x] Offer multiple-comparison correction across batches of tests or arbitrary pairwise tables.
 
 ### Scope
 
 Phase 1 covers continuous-data tests (t-test, Mann-Whitney, Wilcoxon, one-way /
 Welch ANOVA, Kruskal-Wallis, two-way ANOVA) with post-hoc comparisons. Counts
 (Poisson / negative binomial), proportions (Fisher / logistic / beta-binomial),
-survival analysis, mixed-effects models, and batch multiple-comparison
-correction are planned for later phases. See
+survival analysis and mixed-effects models are planned for later phases. See
 [`AGENTS.md`](AGENTS.md) for the roadmap and contributor guidance.

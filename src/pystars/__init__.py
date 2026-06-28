@@ -1,6 +1,7 @@
 """PyStars: automated significance testing for biological and life sciences data."""
 
 from pystars.assumptions import check_equal_variance, check_normality
+from pystars.corrections import adjust_pairwise, adjust_pvalues, adjust_results
 from pystars.dispatcher import test
 from pystars.posthoc import posthoc_dunn, posthoc_games_howell, posthoc_tukey
 from pystars.result import TestResult, to_dataframe
@@ -16,6 +17,9 @@ from pystars.tests_continuous import (
 __all__ = [
     "TestResult",
     "to_dataframe",
+    "adjust_pvalues",
+    "adjust_results",
+    "adjust_pairwise",
     "test",
     "ttest",
     "mannwhitney",
