@@ -30,6 +30,11 @@ result.to_dataframe()              # tidy one-row dataframe
 print(result.summary())            # plain-text summary
 ```
 
+## Examples
+
+- [`examples/tutorial.ipynb`](examples/tutorial.ipynb) — guided tour of the API with synthetic data.
+- [`examples/iris_real_data.ipynb`](examples/iris_real_data.ipynb) — real-world morphology analysis using Fisher's Iris dataset from UCI.
+
 ## Features
 
 ### Auto-selecting dispatcher
