@@ -23,6 +23,7 @@ src/pystars/
   corrections.py       # batch and pairwise multiple-comparison corrections
   result.py            # TestResult dataclass + to_dataframe/summary/__rich__
   dispatcher.py        # test() walks the flowchart
+  plotting.py          # annotate_significance(ax, result, ...)
   __init__.py          # public re-exports
 tests/
   test_data.py
@@ -31,6 +32,7 @@ tests/
   test_tests_continuous.py
   test_posthoc.py
   test_dispatcher.py
+  test_plotting.py
 ```
 
 ### Data flow
@@ -91,6 +93,48 @@ module-level `to_dataframe()` concatenates several results with a column union.
 - `TestResult` is a dataclass whose name starts with `Test` — it sets
   `__test__ = False` so pytest skips it.
 - The dispatcher function is named `test` — it also sets `__test__ = False`.
+
+### Plot annotation module (`plotting.py`)
+
+`annotate_significance(ax, result, ...)` is an annotation layer for an
+*existing* Matplotlib axes. It must not call a plotting function, inspect
+raw data, or recompute a test. It only reads rendered artists, draws
+bracket `Line2D` and label `Text` artists, and expands y limits to keep
+them visible.
+
+Key contracts:
+
+- Comparison source priority: caller-supplied `comparison_table` (if any)
+  overrides everything; otherwise walk `result.pairwise` and recurse into
+  `result.posthoc` (a `TestResult` or list of `TestResult`s). Cycles are
+  rejected.
+- For tables, with `p_column="auto"` use `p_adjusted` when the column is
+  present and non-null, else `p`. Treat `(A, B)` and `(B, A)` as the same
+  unordered pair; duplicates within or across tables raise.
+- Direct two-group fallback: when no pairwise table is present, the caller
+  must pass `groups=(left, right)` — `TestResult` intentionally does not
+  retain the source group names. The p-value comes from `p_adjusted` if
+  finite, otherwise from `p_value`.
+- Tuple `label_map` entries (`(x_category, hue_category)`) target a specific
+  dodged cell on a Seaborn hue plot. Scalar `label_map` entries target one
+  x tick.
+- The resolver calls `ax.figure.canvas.draw()` before reading artist
+  geometry, so swarm placement is finalized. Artists created by this module
+  are tagged with `gid="pystars_annotation"` so a later call never treats
+  them as data geometry.
+- Layout uses display-space y geometry: brackets are placed in pixels
+  above the rendered top of each comparison's x interval, with a greedy
+  closed-interval level assignment. Y-limit expansion preserves the
+  original direction (inverted y axes stay inverted).
+- Letter mode requires `comparisons="all"` and a complete undirected
+  pairwise graph; missing pairs raise an error naming them.
+- Validation runs in `matplotlib.rc_context(rc=rc)`, so `rc` is scoped to
+  the call and never mutates global `rcParams`.
+- Reject horizontal `BarContainer`, polar/3-D axes, non-`Axes` objects,
+  bad `mode`/`bracket`/`alpha`, bad table schemas, non-finite p-values,
+  out-of-range p-values, self-pairs, and duplicate unordered pairs.
+  When in doubt, raise a `ValueError` with a message that tells the caller
+  what to do.
 
 ### Adding a new test
 

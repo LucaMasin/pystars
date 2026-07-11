@@ -3,6 +3,7 @@
 from pystars.assumptions import check_equal_variance, check_normality
 from pystars.corrections import adjust_pairwise, adjust_pvalues, adjust_results
 from pystars.dispatcher import test
+from pystars.plotting import annotate_significance
 from pystars.posthoc import posthoc_dunn, posthoc_games_howell, posthoc_tukey
 from pystars.result import TestResult, to_dataframe
 from pystars.tests_continuous import (
@@ -32,4 +33,5 @@ __all__ = [
     "posthoc_tukey",
     "posthoc_games_howell",
     "posthoc_dunn",
+    "annotate_significance",
 ]
