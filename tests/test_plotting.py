@@ -517,6 +517,26 @@ class TestSelectionFormattingLayout:
         y_values = [lines[i].get_ydata()[0] for i in range(len(lines))]
         assert len({round(y, 6) for y in y_values}) >= 2
 
+    def test_overlapping_pairs_leave_room_for_labels(self):
+        """Each lower-level label must clear the bracket immediately above it."""
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax, heights=(1.0, 2.0, 3.0), labels=("a", "b", "c"))
+        result = _posthoc_pairwise_result(
+            [("a", "b", 0.00001), ("a", "c", 0.00001), ("b", "c", 0.00001)],
+        )
+
+        ps.annotate_significance(ax, result)
+        fig.canvas.draw()
+        lines, texts = _annotation_artists(ax)
+
+        bracket_ys = sorted(ax.transData.transform((0.0, line.get_ydata()[0]))[1] for line in lines)
+        renderer = fig.canvas.get_renderer()
+        label_tops = sorted(text.get_window_extent(renderer).ymax for text in texts)
+
+        assert len(bracket_ys) == len(label_tops) == 3
+        for label_top, next_bracket_y in zip(label_tops, bracket_ys[1:], strict=False):
+            assert label_top < next_bracket_y
+
     def test_disjoint_pairs_share_a_level(self):
         fig, ax = plt.subplots()
         _draw_simple_bar(ax, heights=(1.0, 2.0, 3.0, 4.0), labels=("a", "b", "c", "d"))

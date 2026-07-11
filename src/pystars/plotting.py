@@ -975,10 +975,15 @@ def _draw_brackets(
 
     # Layout parameters in display pixels.
     fs = _resolve_fontsize(text_kws, default=mpl.rcParams["font.size"])
-    base_gap = 4.0
+    # Keep the first annotation close to the rendered data, but reserve a
+    # complete text line before placing the next overlapping bracket.  A
+    # fixed level increment is not enough here: it lets labels collide with
+    # brackets at larger font sizes (and even at Matplotlib's default size).
+    base_gap = 2.0
     cap_height = 6.0
     label_gap = 4.0
-    level_step = 8.0
+    text_height = fs / 72.0 * ax.figure.dpi
+    level_step = text_height + 2.0
 
     bracket_top_disp_max = float("-inf")
     text_y_disp_max = float("-inf")
