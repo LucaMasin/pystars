@@ -572,7 +572,7 @@ class TestSelectionFormattingLayout:
         new_ylim = ax.get_ylim()
         # Inverted axis: the larger value is at the bottom. Original (top) is
         # the second element; the new top should be smaller (more negative).
-        assert new_ylim[0] < original_ylim[0]
+        assert new_ylim[1] < original_ylim[1]
 
     def test_bracket_clears_bar_error_bars(self):
         fig, ax = plt.subplots()
@@ -751,6 +751,177 @@ class TestCompactLettersAndValidation:
             ps.annotate_significance(ax, result, groups=("ctrl", "trt"), alpha=True)
         with pytest.raises(ValueError, match="alpha"):
             ps.annotate_significance(ax, result, groups=("ctrl", "trt"), alpha=1.0)
+
+    def test_y_offset_default_matches_baseline(self):
+        fig, ax = plt.subplots()
+        ax.set_ylim(-5, 50)
+        _draw_simple_bar(ax, heights=(2.0, 4.0), labels=("ctrl", "trt"))
+        result = _direct_two_group_result(p=0.01)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"))
+        fig.canvas.draw()
+        lines, _ = _annotation_artists(ax)
+        baseline_disp = ax.transData.transform((0.0, lines[0].get_ydata()[0]))[1]
+
+        fig2, ax2 = plt.subplots()
+        ax2.set_ylim(-5, 50)
+        _draw_simple_bar(ax2, heights=(2.0, 4.0), labels=("ctrl", "trt"))
+        ps.annotate_significance(ax2, result, groups=("ctrl", "trt"), y_offset=0)
+        fig2.canvas.draw()
+        lines2, _ = _annotation_artists(ax2)
+        default_disp = ax2.transData.transform((0.0, lines2[0].get_ydata()[0]))[1]
+        assert baseline_disp == pytest.approx(default_disp, abs=1e-6)
+
+    def test_y_offset_positive_shifts_bracket_stack_up(self):
+        fig, ax = plt.subplots()
+        ax.set_ylim(-5, 50)
+        _draw_simple_bar(ax, heights=(2.0, 4.0), labels=("ctrl", "trt"))
+        result = _direct_two_group_result(p=0.01)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"))
+        fig.canvas.draw()
+        lines, texts = _annotation_artists(ax)
+        baseline_bracket_disp = ax.transData.transform((0.0, lines[0].get_ydata()[0]))[1]
+        renderer = fig.canvas.get_renderer()
+        baseline_label_disp = texts[0].get_window_extent(renderer).ymin
+
+        fig2, ax2 = plt.subplots()
+        ax2.set_ylim(-5, 50)
+        _draw_simple_bar(ax2, heights=(2.0, 4.0), labels=("ctrl", "trt"))
+        ps.annotate_significance(ax2, result, groups=("ctrl", "trt"), y_offset=12)
+        fig2.canvas.draw()
+        lines2, texts2 = _annotation_artists(ax2)
+        shifted_bracket_disp = ax2.transData.transform((0.0, lines2[0].get_ydata()[0]))[1]
+        renderer2 = fig2.canvas.get_renderer()
+        shifted_label_disp = texts2[0].get_window_extent(renderer2).ymin
+
+        expected = -12.0 * fig2.dpi / 72.0
+        assert (baseline_bracket_disp - shifted_bracket_disp) == pytest.approx(expected, abs=0.5)
+        assert (baseline_label_disp - shifted_label_disp) == pytest.approx(expected, abs=0.5)
+
+    def test_y_offset_negative_shifts_bracket_stack_down(self):
+        fig, ax = plt.subplots()
+        ax.set_ylim(-5, 50)
+        _draw_simple_bar(ax, heights=(2.0, 4.0), labels=("ctrl", "trt"))
+        result = _direct_two_group_result(p=0.01)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"))
+        fig.canvas.draw()
+        lines, _ = _annotation_artists(ax)
+        baseline_disp = ax.transData.transform((0.0, lines[0].get_ydata()[0]))[1]
+
+        fig2, ax2 = plt.subplots()
+        ax2.set_ylim(-5, 50)
+        _draw_simple_bar(ax2, heights=(2.0, 4.0), labels=("ctrl", "trt"))
+        ps.annotate_significance(ax2, result, groups=("ctrl", "trt"), y_offset=-10)
+        fig2.canvas.draw()
+        lines2, _ = _annotation_artists(ax2)
+        shifted_disp = ax2.transData.transform((0.0, lines2[0].get_ydata()[0]))[1]
+        expected = -10.0 * fig2.dpi / 72.0
+        assert (shifted_disp - baseline_disp) == pytest.approx(expected, abs=0.5)
+
+    def test_y_offset_preserves_display_distance_when_headroom_expands(self):
+        result = _direct_two_group_result(p=0.01)
+
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax, heights=(2.0, 4.0))
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"))
+        fig.canvas.draw()
+        lines, _ = _annotation_artists(ax)
+        baseline_disp = ax.transData.transform((0.0, lines[0].get_ydata()[0]))[1]
+
+        fig2, ax2 = plt.subplots()
+        _draw_simple_bar(ax2, heights=(2.0, 4.0))
+        ps.annotate_significance(ax2, result, groups=("ctrl", "trt"), y_offset=18)
+        fig2.canvas.draw()
+        lines2, _ = _annotation_artists(ax2)
+        shifted_disp = ax2.transData.transform((0.0, lines2[0].get_ydata()[0]))[1]
+
+        expected = 18.0 * fig2.dpi / 72.0
+        assert (shifted_disp - baseline_disp) == pytest.approx(expected, abs=0.5)
+
+    def test_y_offset_preserves_level_spacing(self):
+        fig, ax = plt.subplots()
+        ax.set_ylim(-5, 50)
+        _draw_simple_bar(ax, heights=(1.0, 2.0, 3.0, 4.0), labels=("a", "b", "c", "d"))
+        result = _posthoc_pairwise_result([("a", "b", 0.01), ("a", "c", 0.01), ("a", "d", 0.01)])
+        ps.annotate_significance(ax, result)
+        fig.canvas.draw()
+        lines, _ = _annotation_artists(ax)
+        baseline_levels = sorted(
+            ax.transData.transform((0.0, line.get_ydata()[0]))[1] for line in lines
+        )
+        baseline_spacing = baseline_levels[1] - baseline_levels[0]
+
+        fig2, ax2 = plt.subplots()
+        ax2.set_ylim(-5, 50)
+        _draw_simple_bar(ax2, heights=(1.0, 2.0, 3.0, 4.0), labels=("a", "b", "c", "d"))
+        ps.annotate_significance(ax2, result, y_offset=8)
+        fig2.canvas.draw()
+        lines2, _ = _annotation_artists(ax2)
+        shifted_levels = sorted(
+            ax2.transData.transform((0.0, line.get_ydata()[0]))[1] for line in lines2
+        )
+        shifted_spacing = shifted_levels[1] - shifted_levels[0]
+        assert shifted_spacing == pytest.approx(baseline_spacing, abs=0.5)
+
+    def test_y_offset_applies_to_letter_mode(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax, heights=(1.0, 2.0, 3.0), labels=("a", "b", "c"))
+        result = _posthoc_pairwise_result([("a", "b", 0.2), ("b", "c", 0.2), ("a", "c", 0.01)])
+        ps.annotate_significance(ax, result, mode="letters", comparisons="all")
+        fig.canvas.draw()
+        _, baseline_texts = _annotation_artists(ax)
+        renderer = fig.canvas.get_renderer()
+        baseline_tops = sorted(t.get_window_extent(renderer).ymin for t in baseline_texts)
+
+        fig2, ax2 = plt.subplots()
+        _draw_simple_bar(ax2, heights=(1.0, 2.0, 3.0), labels=("a", "b", "c"))
+        ps.annotate_significance(ax2, result, mode="letters", comparisons="all", y_offset=10)
+        fig2.canvas.draw()
+        _, shifted_texts = _annotation_artists(ax2)
+        renderer2 = fig2.canvas.get_renderer()
+        shifted_tops = sorted(t.get_window_extent(renderer2).ymin for t in shifted_texts)
+
+        expected = -10.0 * fig2.dpi / 72.0
+        for base, shifted in zip(baseline_tops, shifted_tops, strict=True):
+            assert (base - shifted) == pytest.approx(expected, abs=0.5)
+
+    def test_y_offset_works_on_inverted_axis(self):
+        fig, ax = plt.subplots()
+        ax.bar(["a", "b"], [10.0, 5.0])
+        ax.invert_yaxis()
+        result = _direct_two_group_result(p=0.01)
+        ps.annotate_significance(ax, result, groups=("a", "b"))
+        fig.canvas.draw()
+        lines, _ = _annotation_artists(ax)
+        baseline_disp = ax.transData.transform((0.0, lines[0].get_ydata()[0]))[1]
+
+        fig2, ax2 = plt.subplots()
+        ax2.bar(["a", "b"], [10.0, 5.0])
+        ax2.invert_yaxis()
+        original_ylim = ax2.get_ylim()
+        ps.annotate_significance(ax2, result, groups=("a", "b"), y_offset=9)
+        fig2.canvas.draw()
+        lines2, _ = _annotation_artists(ax2)
+        shifted_disp = ax2.transData.transform((0.0, lines2[0].get_ydata()[0]))[1]
+
+        expected = 9.0 * fig2.dpi / 72.0
+        assert (shifted_disp - baseline_disp) == pytest.approx(expected, abs=0.5)
+        assert ax2.get_ylim()[1] < original_ylim[1]
+
+    @pytest.mark.parametrize("offset", [np.float32(2), np.float64(2), np.int64(2)])
+    def test_numpy_real_y_offset_is_accepted(self, offset):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.01)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"), y_offset=offset)
+        assert _annotation_artists(ax)[0]
+
+    @pytest.mark.parametrize("bad", [True, "10", float("nan"), float("inf")])
+    def test_invalid_y_offset_raises(self, bad):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.01)
+        with pytest.raises(ValueError, match="y_offset"):
+            ps.annotate_significance(ax, result, groups=("ctrl", "trt"), y_offset=bad)
 
     def test_invalid_groups_length_raises(self):
         fig, ax = plt.subplots()

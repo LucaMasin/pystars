@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from numbers import Real
 from typing import Any, Literal
 
 import matplotlib as mpl
@@ -81,6 +82,7 @@ def annotate_significance(
     alpha: float = 0.05,
     p_column: str = "auto",
     color: str | None = "black",
+    y_offset: float = 0.0,
     rc: Mapping[str, Any] | None = None,
     line_kws: Mapping[str, Any] | None = None,
     text_kws: Mapping[str, Any] | None = None,
@@ -97,6 +99,7 @@ def annotate_significance(
         alpha=alpha,
         p_column=p_column,
         label_map=label_map,
+        y_offset=y_offset,
         rc=rc,
         line_kws=line_kws,
         text_kws=text_kws,
@@ -135,6 +138,7 @@ def annotate_significance(
 
         ax.figure.canvas.draw()
         geometry = _resolve_positions(ax, resolved)
+        y_offset_display = float(y_offset) * ax.figure.dpi / 72.0
 
         if mode == "letters":
             _draw_compact_letters(
@@ -143,6 +147,7 @@ def annotate_significance(
                 geometry,
                 alpha=alpha,
                 color=color,
+                y_offset_display=y_offset_display,
                 text_kws=text_kws,
             )
         else:
@@ -153,6 +158,7 @@ def annotate_significance(
                 mode=mode,
                 bracket=bracket,
                 color=color,
+                y_offset_display=y_offset_display,
                 line_kws=line_kws,
                 text_kws=text_kws,
             )
@@ -170,6 +176,7 @@ def _validate_options(
     alpha: Any,
     p_column: Any,
     label_map: Any,
+    y_offset: Any,
     rc: Any,
     line_kws: Any,
     text_kws: Any,
@@ -205,6 +212,11 @@ def _validate_options(
         raise ValueError("alpha must be a finite real number strictly between 0 and 1.")
     if not isinstance(p_column, str) or p_column == "":
         raise ValueError("p_column must be 'auto' or a non-empty string.")
+    if isinstance(y_offset, bool) or not isinstance(y_offset, Real):
+        raise ValueError("y_offset must be a finite real number (display points).")
+    y_offset_f = float(y_offset)
+    if not np.isfinite(y_offset_f):
+        raise ValueError("y_offset must be a finite real number (display points).")
     for name, value in (
         ("label_map", label_map),
         ("rc", rc),
@@ -905,6 +917,7 @@ def _draw_brackets(
     mode: str,
     bracket: str,
     color: str | None,
+    y_offset_display: float,
     line_kws: Mapping[str, Any] | None,
     text_kws: Mapping[str, Any] | None,
 ) -> None:
@@ -985,8 +998,8 @@ def _draw_brackets(
     text_height = fs / 72.0 * ax.figure.dpi
     level_step = text_height + 2.0
 
-    bracket_top_disp_max = float("-inf")
     text_y_disp_max = float("-inf")
+    positions: list[tuple[float, float, float, float, float, float]] = []
     # Per-level y position: take the maximum base top within the level so
     # disjoint intervals on the same level share a common bracket height.
     level_y_offset: dict[int, float] = {}
@@ -994,12 +1007,24 @@ def _draw_brackets(
         level_y_offset[li] = max(t for _, _, t in lvl)
     for (left_x, _left_k, p, right_x, _right_k), li in zip(ordered, level_of_index, strict=False):
         base_top_disp = level_y_offset[li]
-        bracket_top_disp = base_top_disp + base_gap + li * (cap_height + label_gap + level_step)
+        bracket_top_disp = (
+            base_top_disp + base_gap + y_offset_display + li * (cap_height + label_gap + level_step)
+        )
         cap_bottom_disp = bracket_top_disp - cap_height
         text_y_disp = bracket_top_disp + label_gap
-        bracket_top_disp_max = max(bracket_top_disp_max, bracket_top_disp)
         text_y_disp_max = max(text_y_disp_max, text_y_disp)
+        positions.append((left_x, right_x, p, bracket_top_disp, cap_bottom_disp, text_y_disp))
 
+    # Expand the limits before converting display coordinates to data
+    # coordinates. Changing the limits changes transData, so doing this after
+    # drawing would move the annotations away from their requested positions.
+    _expand_y_headroom(
+        ax,
+        top_disp_hint=text_y_disp_max,
+        text_fontsize=fs,
+    )
+
+    for left_x, right_x, p, bracket_top_disp, cap_bottom_disp, text_y_disp in positions:
         if bracket == "square":
             xs_disp = [left_x, left_x, right_x, right_x]
             ys_disp = [cap_bottom_disp, bracket_top_disp, bracket_top_disp, cap_bottom_disp]
@@ -1036,12 +1061,6 @@ def _draw_brackets(
         )
         text.set_zorder(max(text_style.get("zorder", 3.0), 3.0))
         ax.add_artist(text)
-
-    _expand_y_headroom(
-        ax,
-        top_disp_hint=text_y_disp_max,
-        text_fontsize=fs,
-    )
 
 
 def _format_label(p: float, *, mode: str) -> str:
@@ -1111,22 +1130,15 @@ def _expand_y_headroom(
     if top_disp_hint == float("-inf"):
         return
     y0, y1 = ax.get_ylim()
-    inverted = y0 > y1
     fig_dpi = ax.figure.dpi
     text_height_disp = text_fontsize / 72.0 * fig_dpi + 4.0
     margin = 6.0
-    if not inverted:
-        y_top_disp = ax.transData.transform((0.0, y1))[1]
-        needed = top_disp_hint + text_height_disp + margin
-        if needed > y_top_disp:
-            new_y1 = ax.transData.inverted().transform((0.0, needed))[1]
-            ax.set_ylim(y0, new_y1)
-    else:
-        y_top_disp = ax.transData.transform((0.0, y0))[1]
-        needed = top_disp_hint + text_height_disp + margin
-        if needed > y_top_disp:
-            new_y0 = ax.transData.inverted().transform((0.0, needed))[1]
-            ax.set_ylim(new_y0, y1)
+    # In get_ylim order, y1 is the visual top endpoint even when the axis is inverted.
+    y_top_disp = ax.transData.transform((0.0, y1))[1]
+    needed = top_disp_hint + text_height_disp + margin
+    if needed > y_top_disp:
+        new_y1 = ax.transData.inverted().transform((0.0, needed))[1]
+        ax.set_ylim(y0, new_y1)
 
 
 # ============================================================== compact letters
@@ -1139,6 +1151,7 @@ def _draw_compact_letters(
     *,
     alpha: float,
     color: str | None,
+    y_offset_display: float,
     text_kws: Mapping[str, Any] | None,
 ) -> None:
     # Build complete pairwise set among the unique groups involved.
@@ -1225,6 +1238,7 @@ def _draw_compact_letters(
     text_height_disp = fs / 72.0 * fig_dpi + 4.0
 
     max_letter_y_disp = float("-inf")
+    positions: list[tuple[float, float, str]] = []
     for g in groups:
         letters = "".join(sorted(group_letters.get(g, [])))
         if not letters:
@@ -1236,11 +1250,20 @@ def _draw_compact_letters(
             top_disp = ax.transData.transform((0.0, top_data))[1]
         else:
             top_disp = geom_g.y_top
-        text_y_disp = top_disp + text_height_disp
+        text_y_disp = top_disp + text_height_disp + y_offset_display
         max_letter_y_disp = max(max_letter_y_disp, text_y_disp)
+        positions.append((geom_g.x_center, text_y_disp, letters))
+
+    _expand_y_headroom(
+        ax,
+        top_disp_hint=max_letter_y_disp,
+        text_fontsize=fs,
+    )
+
+    for x_data, text_y_disp, letters in positions:
         text_y_data = ax.transData.inverted().transform((0.0, text_y_disp))[1]
         t = Text(
-            geom_g.x_center,
+            x_data,
             text_y_data,
             letters,
             transform=ax.transData,
@@ -1252,9 +1275,3 @@ def _draw_compact_letters(
         )
         t.set_zorder(max(text_style.get("zorder", 3.0), 3.0))
         ax.add_artist(t)
-
-    _expand_y_headroom(
-        ax,
-        top_disp_hint=max_letter_y_disp,
-        text_fontsize=fs,
-    )

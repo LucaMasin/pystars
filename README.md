@@ -249,11 +249,20 @@ ps.annotate_significance(
     mode="pvalue",      # one of "stars" (default), "pvalue", "value", "letters"
     bracket="line",     # "line" (default) or "square" (with caps)
     color="black",      # default is "black"; pass any Matplotlib color
+    y_offset=6,         # shift the whole annotation stack in display points;
+                        # positive moves up, negative moves down
     text_kws={"fontsize": 12, "fontweight": "bold"},
     line_kws={"linewidth": 1.0},
     rc={"font.size": 12},  # scoped rc; does not change global rcParams
 )
 ```
+
+`y_offset` is a signed display-point value (1 point = 1/72 inch, scaled by the
+figure DPI). It shifts the entire bracket stack uniformly so spacing between
+overlapping brackets is preserved, and it also applies to compact-letter
+labels in `mode="letters"`. The visual direction ("up" / "down") is
+consistent on linear, log, and inverted axes because the offset is applied in
+display space.
 
 P-value formatting is fixed and independent of the selected `alpha`:
 scientific notation with two significant decimals for `p < 1e-4`, otherwise

@@ -115,6 +115,12 @@ Key contracts:
   must pass `groups=(left, right)` — `TestResult` intentionally does not
   retain the source group names. The p-value comes from `p_adjusted` if
   finite, otherwise from `p_value`.
+- `y_offset` is a signed display-point value added uniformly to the entire
+  bracket stack (and to compact-letter labels). Positive values pad the
+  annotation upward in display space, negative values pad it downward.
+  Because the offset is in display space, the visual direction matches the
+  user's intent on linear, log, and inverted axes. Bracket-to-bracket
+  spacing is preserved across levels.
 - Tuple `label_map` entries (`(x_category, hue_category)`) target a specific
   dodged cell on a Seaborn hue plot. Scalar `label_map` entries target one
   x tick.
