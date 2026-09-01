@@ -11,7 +11,12 @@ import pandas as pd
 
 @dataclass
 class LongData:
-    """Canonical long-format data produced by :func:`normalize_data`.
+    """Canonical long-format representation used by PyStars.
+
+    ``LongData`` is returned by :func:`normalize_data` and is the common input
+    representation used by the statistical and assumption-checking functions.
+    Users will usually pass their original dataframe to a public test function
+    rather than construct this class directly.
 
     Attributes:
         df: Long-format dataframe with a ``value`` column, a ``group`` column
@@ -20,6 +25,11 @@ class LongData:
         group_cols: Names of the factor column(s) in ``df``.
         subject_col: Name of the subject column in ``df`` (``"subject"``) or ``None``.
         value_col: Name of the value column in ``df`` (always ``"value"``).
+
+    Notes:
+        For a multi-factor design, ``df["group"]`` contains labels formed by
+        joining factor levels with ``"::"``. The original factor columns remain
+        available in ``df`` for factorial analyses.
     """
 
     df: pd.DataFrame
@@ -40,28 +50,50 @@ def normalize_data(
 ) -> LongData:
     """Normalize an input dataframe into canonical long format.
 
+    Use this function when you need to inspect the representation consumed by
+    PyStars, or when writing code around the lower-level API. Most users can
+    pass the same arguments directly to :func:`pystars.test` or one of the
+    statistical test functions.
+
     Parameters
     ----------
     df:
-        Input dataframe in long or wide format.
+        Input observations as a pandas dataframe.
     value:
-        (Long format) Name of the outcome column.
+        For long format, the name of the numeric outcome column. Not used for
+        wide format.
     group:
-        (Long format) Name of the grouping column, or list of factor columns
-        for a factorial design.
+        For long format, the name of the grouping column, or a list of one or
+        more factor columns for a factorial design. Not used for wide format.
     subject:
-        (Long format) Name of the subject/id column (required for paired tests).
+        For long format, the name of the subject or matched-unit column. It is
+        required when a paired test is requested. Not used for wide format.
     format:
-        ``"long"`` (default) or ``"wide"``.
+        Input layout: ``"long"`` (default) expects one observation per row;
+        ``"wide"`` expects one group per value column.
     groups:
-        (Wide format) Column names representing each group.
+        For wide format, the value-column names to melt into groups. The order
+        supplied here determines the group order used by paired tests.
     subject_index:
-        (Wide format) Optional subject-id column; if absent, the row index is used.
+        For wide format, an optional subject-id column. If omitted, the input
+        row index is converted to subject labels so wide data can support
+        paired tests.
 
     Returns
     -------
     LongData
-        Canonical long-format data.
+        Canonical data with columns named ``value`` and ``group``, plus
+        ``subject`` and the original factor columns when applicable.
+
+    Raises
+    ------
+    ValueError
+        If the requested format is invalid or a required column is missing.
+
+    Examples
+    --------
+    >>> long_data = normalize_data(df, value="length", group="genotype")
+    >>> wide_data = normalize_data(wide_df, format="wide", groups=["control", "treated"])
     """
     if format == "long":
         return _normalize_long(df, value=value, group=group, subject=subject)
@@ -147,17 +179,26 @@ def _normalize_wide(
 
 
 def paired_differences(data: LongData) -> np.ndarray:
-    """Compute per-subject paired differences for a 2-group long-format dataset.
+    """Compute per-subject paired differences for a two-group dataset.
 
     Parameters
     ----------
     data:
-        Canonical long data with a ``subject`` column and exactly 2 groups.
+        Canonical data from :func:`normalize_data` with a ``subject`` column
+        and exactly two groups.
 
     Returns
     -------
     np.ndarray
         Differences ``group2 - group1`` for each subject present in both groups.
+        ``group1`` and ``group2`` are the groups in first-seen order in
+        ``data.df``; subjects with a missing measurement are omitted.
+
+    Raises
+    ------
+    ValueError
+        If no subject column is present or the data does not contain exactly
+        two groups.
     """
     if data.subject_col is None:
         raise ValueError("paired tests require a subject column.")
@@ -171,5 +212,16 @@ def paired_differences(data: LongData) -> np.ndarray:
 
 
 def n_per_group(data: LongData) -> dict[str, int]:
-    """Return a mapping of group label to sample size."""
+    """Return the number of observations in each group.
+
+    Parameters
+    ----------
+    data:
+        Canonical data from :func:`normalize_data`.
+
+    Returns
+    -------
+    dict[str, int]
+        Mapping from each canonical group label to its number of rows.
+    """
     return data.df.groupby("group")["value"].size().to_dict()

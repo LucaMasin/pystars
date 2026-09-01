@@ -47,7 +47,49 @@ def posthoc_tukey(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """Tukey HSD post-hoc test (for one-way ANOVA with equal variance)."""
+    """Run Tukey's honestly significant difference (HSD) post-hoc test.
+
+    Tukey HSD performs all pairwise comparisons after a one-way ANOVA when
+    observations are independent and the equal-variance assumption is
+    appropriate. It can also be called directly for exactly two groups. The
+    p-values in the returned pairwise table are Tukey-adjusted.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns
+        whose combinations should be compared. At least two groups are
+        required.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is not used by this
+        independent-groups procedure.
+
+    Returns
+    -------
+    TestResult
+        A post-hoc result with ``effect_size={}``, ``statistic=NaN``, and
+        ``p_value=NaN``. Pairwise results are in ``result.pairwise`` with
+        columns ``A``, ``B``, ``diff``, and ``p``; ``p`` contains the Tukey
+        adjusted p-value.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two groups are present.
+
+    Examples
+    --------
+    >>> result = posthoc_tukey(df, value="length", group="treatment")
+    >>> pairwise = result.pairwise[["A", "B", "p"]]
+    """
     data = normalize_data(
         df,
         value=value,
@@ -80,7 +122,50 @@ def posthoc_games_howell(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """Games-Howell post-hoc test (for Welch's ANOVA with unequal variance)."""
+    """Run the Games-Howell post-hoc test for unequal variances.
+
+    Games-Howell performs all pairwise comparisons after Welch's ANOVA and is
+    appropriate for independent groups with potentially different variances
+    and sample sizes. It can also be called directly for exactly two groups.
+    The p-values in the returned pairwise table are adjusted by the
+    Games-Howell procedure.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns
+        whose combinations should be compared. At least two groups are
+        required.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is not used by this
+        independent-groups procedure.
+
+    Returns
+    -------
+    TestResult
+        A post-hoc result with ``effect_size={}``, ``statistic=NaN``, and
+        ``p_value=NaN``. Pairwise results are in ``result.pairwise`` with
+        columns ``A``, ``B``, ``diff``, and ``p``; ``p`` contains the
+        Games-Howell adjusted p-value.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two groups are present.
+
+    Examples
+    --------
+    >>> result = posthoc_games_howell(df, value="length", group="treatment")
+    >>> pairwise = result.pairwise[["A", "B", "p"]]
+    """
     data = normalize_data(
         df,
         value=value,
@@ -116,12 +201,51 @@ def posthoc_dunn(
 ) -> TestResult:
     """Dunn's post-hoc test (for Kruskal-Wallis, non-parametric).
 
+    Dunn's test performs pairwise comparisons after a significant
+    Kruskal-Wallis test. It is non-parametric and should be used with
+    independent groups. At least two groups are required.
+
     Parameters
     ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns
+        whose combinations should be compared.
     p_adjust:
         Multiple-comparison correction method (default ``"holm"``).
         See :func:`scikit_posthocs.posthoc_dunn` for available methods.
         Pass ``None`` for unadjusted p-values.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is not used by this
+        independent-groups procedure.
+
+    Returns
+    -------
+    TestResult
+        A post-hoc result with ``effect_size={}``, ``statistic=NaN``, and
+        ``p_value=NaN``. Pairwise results are in ``result.pairwise`` with
+        columns ``A``, ``B``, ``p``, and ``p_adjust``. The ``p`` column is
+        adjusted according to ``p_adjust``; ``None`` produces unadjusted
+        p-values and records ``"none"`` in ``p_adjust``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two groups are present.
+
+    Examples
+    --------
+    >>> result = posthoc_dunn(
+    ...     df, value="length", group="treatment", p_adjust="holm"
+    ... )
+    >>> pairwise = result.pairwise[["A", "B", "p", "p_adjust"]]
     """
     data = normalize_data(
         df,

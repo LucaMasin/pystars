@@ -32,6 +32,18 @@ result.to_dataframe()              # tidy one-row dataframe
 print(result.summary())            # plain-text summary
 ```
 
+### API help in notebooks
+
+All public functions include parameter, return-value, and behavior details in
+their docstrings. In Jupyter, place `?` after a function to open its help panel,
+or use Python's built-in `help()`:
+
+```python
+pystars.test?
+help(pystars.ttest)
+help(pystars.annotate_significance)
+```
+
 ## Examples
 
 - [`examples/tutorial.ipynb`](examples/tutorial.ipynb) — guided tour of the API with synthetic data.

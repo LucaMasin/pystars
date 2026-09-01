@@ -89,8 +89,108 @@ def annotate_significance(
 ) -> Axes:
     """Add significance annotations to an existing Matplotlib axes.
 
-    See the README for a description of accepted comparison sources, selection
-    options, label mapping, modes, and bracket shapes.
+    This function is an annotation layer only: it reads the rendered bars,
+    points, error bars, and legend on ``ax``, then draws significance labels on
+    top of them. It does not plot raw data or recompute a statistical test.
+
+    Comparison data is selected in this order:
+
+    1. An explicitly supplied ``comparison_table``.
+    2. ``result.pairwise``, followed recursively by ``result.posthoc``.
+    3. A direct two-group comparison using the caller-supplied ``groups``.
+
+    Pairwise tables must contain ``A`` and ``B`` columns and a p-value column.
+    With ``p_column="auto"``, a non-null ``p_adjusted`` column is preferred
+    over ``p``. Pair direction is ignored, so ``(A, B)`` and ``(B, A)`` are
+    the same comparison. Duplicate pairs and cycles in nested post-hoc results
+    are rejected.
+
+    Parameters
+    ----------
+    ax:
+        Existing two-dimensional Cartesian Matplotlib axes containing a
+        vertical categorical plot. The same axes object is returned.
+    result:
+        :class:`~pystars.result.TestResult` containing a pairwise table,
+        nested post-hoc results, or a direct two-group p-value.
+    comparison_table:
+        Optional explicit pairwise dataframe. It overrides every pairwise
+        table attached to ``result`` and must contain ``A``, ``B``, and the
+        selected p-value column.
+    comparisons:
+        Which comparisons to draw. ``"significant"`` (default) keeps rows
+        with ``p <= alpha``; ``"all"`` draws every row; a sequence of
+        two-tuples draws exactly the requested pairs.
+    groups:
+        Two source-group labels for a direct two-group ``TestResult`` that has
+        no pairwise table. ``TestResult`` does not retain the source labels, so
+        this argument is required in that case. The p-value uses a finite
+        ``result.p_adjusted`` when available, otherwise ``result.p_value``.
+    label_map:
+        Optional mapping from statistical group labels to displayed x labels.
+        Scalar values target one x tick. Two-item tuple values of the form
+        ``(x_category, hue_category)`` target a particular dodged cell in a
+        hue plot. Tuple mappings require a visible legend and mappings for all
+        selected comparison endpoints.
+    mode:
+        Label format: ``"stars"`` (default), ``"pvalue"`` for labels such as
+        ``"p=0.01"``, ``"value"`` for the formatted p-value alone, or
+        ``"letters"`` for a compact-letter display. Star labels use ``*`` for
+        ``p <= 0.05``, ``**`` for ``p <= 0.01``, ``***`` for ``p <= 0.001``,
+        and ``****`` for ``p <= 0.0001``; larger p-values use ``"ns"``.
+    bracket:
+        Bracket shape: ``"line"`` (default) draws a horizontal line, while
+        ``"square"`` adds downward caps at both ends.
+    alpha:
+        Significance threshold used by ``comparisons="significant"`` and for
+        compact-letter grouping. The default is ``0.05``.
+    p_column:
+        P-value column to read from pairwise tables. ``"auto"`` prefers
+        ``p_adjusted`` when it has at least one non-null value, then falls back
+        to ``p``. Pass a column name to select it explicitly.
+    color:
+        Color for brackets and labels. The default is ``"black"``; ``None``
+        leaves the artist default in place unless overridden in the style
+        mappings.
+    y_offset:
+        Signed offset in display points applied uniformly to the complete
+        annotation stack. Positive values move annotations upward and negative
+        values move them downward, including on log-scaled or inverted axes.
+    rc:
+        Optional Matplotlib rc-parameter mapping scoped to this call. It is
+        applied with :func:`matplotlib.rc_context` and does not mutate global
+        ``rcParams``.
+    line_kws:
+        Optional Matplotlib ``Line2D`` properties for brackets. Geometry and
+        transform properties are reserved and cannot be overridden.
+    text_kws:
+        Optional Matplotlib ``Text`` properties for labels. Position,
+        transform, geometry, and annotation ``gid`` properties are reserved.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The same ``ax`` object, allowing calls to be chained with other
+        Matplotlib operations.
+
+    Raises
+    ------
+    ValueError
+        If the axes, options, comparison schema, p-values, group labels, or
+        pairwise graph are invalid; if a direct result lacks ``groups``; or if
+        rendered plot geometry cannot resolve a requested category.
+
+    Notes
+    -----
+    Compact-letter mode requires ``comparisons="all"`` and a complete
+    undirected pairwise graph. Artist geometry is resolved after drawing the
+    canvas, and annotations are tagged so a later call does not mistake them
+    for data artists.
+
+    Examples
+    --------
+    >>> ax = df.plot.bar(x="group", y="length")
+    >>> annotate_significance(ax, result, groups=("control", "treated"))
     """
     _validate_options(
         ax=ax,

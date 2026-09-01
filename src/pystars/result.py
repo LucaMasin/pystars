@@ -18,14 +18,26 @@ class TestResult:
 
     Attributes:
         test_name: Human-readable name of the test.
-        statistic: Test statistic value.
-        p_value: p-value of the test.
-        effect_size: Dict of effect-size measures (e.g. ``{"cohen_d": 0.8, "CI95%": [0.2, 1.4]}``).
-        assumptions: Dict of assumption checks
-            (e.g. ``{"normality": {...}, "equal_variance": {...}}``).
-        posthoc: A :class:`TestResult` or list of them for post-hoc comparisons, or ``None``.
-        pairwise: Pairwise comparison table (pandas DataFrame) for post-hoc results.
-        extra: Optional dict of additional metadata.
+        statistic: Test statistic value. Post-hoc-only results use ``NaN``.
+        p_value: Raw p-value of the test. Post-hoc-only results use ``NaN``.
+        effect_size: Mapping of effect-size measures, such as
+            ``{"cohen_d": 0.8, "CI95%": [0.2, 1.4]}``.
+        assumptions: Mapping of assumption names to their test results, or
+            ``None`` when no assumptions were attached.
+        posthoc: A :class:`TestResult`, a list of results, or ``None`` for
+            post-hoc comparisons.
+        pairwise: Pairwise comparison table as a pandas dataframe, or ``None``
+            when no pairwise results are available.
+        details: Detailed dataframe, such as a full ANOVA table or per-group
+            normality results, or ``None``.
+        extra: Optional mapping of additional metadata, such as dispatcher
+            decisions or assumption verdicts.
+        p_adjusted: Corrected p-value, or ``None`` until a correction is
+            applied.
+        p_adjust_method: Name of the correction method, or ``None``.
+        p_adjust_alpha: Significance threshold used for correction, or ``None``.
+        reject: Whether ``p_adjusted`` is significant at ``p_adjust_alpha``,
+            or ``None`` until a correction is applied.
     """
 
     test_name: str
@@ -47,7 +59,29 @@ class TestResult:
 
     # ------------------------------------------------------------------ export
     def to_dataframe(self) -> pd.DataFrame:
-        """Return a single-row tidy dataframe representation."""
+        """Convert this result to a single-row tidy dataframe.
+
+        Parameters
+        ----------
+        None
+            This method takes no parameters.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A one-row dataframe containing the test name, statistic, p-value,
+            optional correction fields, flattened effect sizes, flattened
+            assumptions, and a post-hoc test-name column. Nested dictionaries
+            use underscore-separated keys such as ``normality_p``; lists and
+            tuples use indexed keys such as ``CI95%_0``. Detailed and pairwise
+            dataframes are not expanded into this one-row representation.
+
+        Examples
+        --------
+        >>> table = result.to_dataframe()
+        >>> table.loc[0, "test"]
+        "Welch's t-test"
+        """
         row: dict[str, Any] = {
             "test": self.test_name,
             "statistic": self.statistic,
@@ -78,7 +112,26 @@ class TestResult:
 
     # ------------------------------------------------------------------ summary
     def summary(self) -> str:
-        """Return a plain-text summary of the test."""
+        """Return a plain-text summary of this result.
+
+        Parameters
+        ----------
+        None
+            This method takes no parameters.
+
+        Returns
+        -------
+        str
+            Multiline text containing the test name, statistic, p-value,
+            correction information, effect sizes, assumption verdicts, and
+            post-hoc names when those fields are present. P-values below
+            ``1e-4`` are displayed as ``<0.0001``. Assumption verdicts use
+            ``0.05`` as their display threshold.
+
+        Examples
+        --------
+        >>> summary_text = result.summary()
+        """
         lines = [
             f"Test: {self.test_name}",
             f"Statistic: {self._fmt_statistic()}",
@@ -115,6 +168,19 @@ class TestResult:
 
     # ------------------------------------------------------------------ rich
     def __rich__(self) -> Any:
+        """Build the Rich renderable used when this result is printed.
+
+        Parameters
+        ----------
+        None
+            This method takes no parameters.
+
+        Returns
+        -------
+        rich.panel.Panel
+            A Rich panel containing the test result, assumptions, detailed
+            table, and pairwise table when available.
+        """
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
         table.add_column("Field", style="cyan")
         table.add_column("Value")
@@ -163,7 +229,23 @@ class TestResult:
         return Panel(Group(*renderables), title=f"[bold]{self.test_name}[/bold]")
 
     def show(self, console: Console | None = None) -> None:
-        """Render the result to a rich console (defaults to stdout)."""
+        """Render this result to a Rich console.
+
+            Parameters
+            ----------
+            console:
+                Rich console to render to. If ``None`` (default), create a console
+                that writes to standard output.
+
+            Returns
+            -------
+            None
+                The result is rendered as a side effect; nothing is returned.
+
+        Examples
+        --------
+        >>> result.show()  # doctest: +SKIP
+        """
         (console if console is not None else Console()).print(self)
 
     # ------------------------------------------------------------------ helpers
@@ -228,6 +310,36 @@ def to_dataframe(
 
     Columns are the union of all result columns; missing values are filled with NaN.
     Pass ``p_adjust`` to attach corrected p-values across the provided results.
+
+    Parameters
+    ----------
+    results:
+        One :class:`TestResult` or an iterable of results. An empty iterable
+        returns an empty dataframe.
+    p_adjust:
+        Optional multiple-comparison correction method. When provided, the
+        results are corrected on copies using :func:`adjust_results` before
+        export. The default is ``None`` (no correction).
+    alpha:
+        Significance threshold used when ``p_adjust`` is provided. The default
+        is ``0.05``. It is ignored when ``p_adjust`` is ``None``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Concatenated one-row result tables with the union of their columns;
+        missing values are filled by pandas with ``NaN`` or ``NA`` as
+        appropriate.
+
+    Raises
+    ------
+    ValueError
+        If ``p_adjust`` or ``alpha`` is invalid, or a result contains an
+        invalid p-value for correction.
+
+    Examples
+    --------
+    >>> table = to_dataframe([result_a, result_b], p_adjust="holm")
     """
     if isinstance(results, TestResult):
         results = [results]

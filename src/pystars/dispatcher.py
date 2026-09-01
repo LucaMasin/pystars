@@ -39,6 +39,21 @@ def test(
     in Phase 1), number of groups, pairing, normality, and equal-variance
     assumptions, it selects and runs the correct statistical test.
 
+    For two independent groups, normal data uses Student's or Welch's t-test
+    according to Levene's test, while non-normal data uses Mann-Whitney U.
+    For two paired groups, normal differences use a paired t-test and
+    non-normal differences use Wilcoxon signed-rank. For more than two groups,
+    the corresponding choices are one-way ANOVA, Welch's ANOVA, or
+    Kruskal-Wallis, with an appropriate post-hoc test when enabled. A list of
+    at least two factor columns always selects two-way ANOVA, regardless of
+    ``paired``.
+
+    Groups with fewer than :data:`pystars.assumptions.SMALL_N` observations are
+    treated as non-normal. The selected result records the assumption checks in
+    ``result.assumptions``. ``auto_posthoc`` controls post-hoc execution only
+    for the more-than-two-group and multi-factor branches, and post-hoc tests
+    are run only when the omnibus p-value is less than ``alpha``.
+
     Parameters
     ----------
     df:
@@ -58,15 +73,29 @@ def test(
     subject_index:
         (Wide) Optional subject-id column.
     alpha:
-        Significance level for assumption checks and post-hoc gating (default 0.05).
+        Significance level for assumption verdicts and post-hoc gating. The
+        default is ``0.05``.
     auto_posthoc:
-        Whether to automatically run post-hoc tests after a significant ANOVA.
+        Whether to automatically run post-hoc tests after a significant
+        omnibus test in branches that support post-hoc comparisons. The
+        default is ``True``.
 
     Returns
     -------
     TestResult
         Result of the selected test, with assumptions attached and (optionally)
         post-hoc comparisons.
+
+    Raises
+    ------
+    ValueError
+        If the input format or column names are invalid, or if the selected
+        test requires a subject column or a specific number of groups that the
+        data does not provide.
+
+    Examples
+    --------
+    >>> result = test(df, value="length", group="treatment")
     """
     data = normalize_data(
         df,

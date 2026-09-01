@@ -115,8 +115,57 @@ def check_normality(
 ) -> TestResult:
     """User-facing Shapiro-Wilk normality test.
 
-    Returns a :class:`TestResult` whose ``p_value`` is the worst-case (minimum)
-    p across groups. Per-group details are stored in ``extra["per_group"]``.
+    For independent data, Shapiro-Wilk is applied separately to every group
+    and the smallest p-value is used for the returned result. For paired data,
+    it is applied to the within-subject differences instead. Groups with fewer
+    than :data:`SMALL_N` observations are treated as non-normal because the
+    normality check is unreliable at that sample size.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns.
+    subject:
+        For long format, the subject or matched-unit column. Required when
+        ``paired=True``.
+    paired:
+        If ``True``, test normality of paired differences. The data must have
+        a subject column and exactly two groups.
+    alpha:
+        Threshold used for the ``passed`` verdict stored in ``result.extra``.
+        The default is ``0.05``.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. If omitted, row
+        indices are used as subject labels.
+
+    Returns
+    -------
+    TestResult
+        A result named ``"Shapiro-Wilk normality test"``. Its ``p_value`` is
+        the minimum per-group p-value for independent data, or the p-value of
+        the paired differences. ``result.extra`` contains ``alpha``,
+        ``passed``, and ``per_group``; independent results also expose the
+        per-group table through ``result.details``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid, or if paired data lacks a subject
+        column or does not contain exactly two groups.
+
+    Examples
+    --------
+    >>> result = check_normality(df, value="length", group="genotype")
+    >>> 0 <= result.p_value <= 1
+    True
     """
     data = normalize_data(
         df,
@@ -150,7 +199,49 @@ def check_equal_variance(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """User-facing Levene's test for equal variance across groups."""
+    """Run Levene's test for equal variance across independent groups.
+
+    The test uses median-centered Levene's test, which is more robust to
+    departures from normality than mean-centered Levene's test. The returned
+    verdict is ``True`` when the p-value is greater than ``alpha``.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns.
+    alpha:
+        Threshold used for the ``passed`` verdict stored in ``result.extra``.
+        The default is ``0.05``.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is retained during
+        normalization but is not used by this independent-groups test.
+
+    Returns
+    -------
+    TestResult
+        A result named ``"Levene's test for equal variance"`` with the Levene
+        statistic and p-value. ``result.extra`` contains ``alpha`` and the
+        boolean ``passed`` verdict.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two groups are present.
+
+    Examples
+    --------
+    >>> result = check_equal_variance(df, value="length", group="genotype")
+    >>> result.test_name
+    "Levene's test for equal variance"
+    """
     data = normalize_data(
         df,
         value=value,

@@ -40,6 +40,39 @@ def adjust_pvalues(
     Supported methods mirror :func:`pingouin.multicomp`: ``"bonf"``,
     ``"sidak"``, ``"holm"``, ``"fdr_bh"``, ``"fdr_by"``, and aliases.
     Missing values are preserved and are never marked as rejected.
+
+    Parameters
+    ----------
+    p_values:
+        Iterable of numeric p-values. ``None`` and ``NaN`` are treated as
+        missing, preserved in the output, and never rejected.
+    method:
+        Multiple-comparison correction method. Supported names are
+        ``"bonf"``, ``"bonferroni"``, ``"sidak"``, ``"holm"``,
+        ``"fdr_bh"``, ``"fdr_by"``, their short aliases, and ``"none"``.
+        Names are case-insensitive. The default is ``"holm"``.
+    alpha:
+        Significance threshold used to populate the ``reject`` column. Must
+        be strictly between 0 and 1. The default is ``0.05``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per input p-value, preserving input order. The columns are
+        ``p_value``, ``p_adjusted``, ``reject``, ``p_adjust_method``, and
+        ``p_adjust_alpha``.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is unsupported, ``alpha`` is not strictly between 0 and
+        1, or a p-value is not numeric or lies outside ``[0, 1]``.
+
+    Examples
+    --------
+    >>> adjusted = adjust_pvalues([0.01, 0.03, 0.20], method="holm")
+    >>> adjusted["p_adjusted"].tolist()
+    [0.03, 0.06, 0.2]
     """
     method = _validate_method(method)
     alpha = _validate_alpha(alpha)
@@ -66,7 +99,44 @@ def adjust_results(
     alpha: float = 0.05,
     inplace: bool = False,
 ) -> list[TestResult]:
-    """Attach corrected p-values to a list of :class:`TestResult` objects."""
+    """Attach corrected p-values to several :class:`TestResult` objects.
+
+    By default, the input results and their nested data are deep-copied before
+    correction. Use ``inplace=True`` to update the supplied list and result
+    objects directly.
+
+    Parameters
+    ----------
+    results:
+        Iterable of :class:`TestResult` objects. Any iterable is consumed into
+        a list; an empty iterable returns an empty list.
+    method:
+        Multiple-comparison correction method accepted by
+        :func:`adjust_pvalues`. The default is ``"holm"``.
+    alpha:
+        Significance threshold used for each result's ``reject`` field. Must
+        be strictly between 0 and 1. The default is ``0.05``.
+    inplace:
+        If ``False`` (default), return corrected deep copies. If ``True``,
+        mutate the supplied result objects when the input is a list.
+
+    Returns
+    -------
+    list[TestResult]
+        Results in the original order, with ``p_adjusted``, ``reject``,
+        ``p_adjust_method``, and ``p_adjust_alpha`` populated.
+
+    Raises
+    ------
+    ValueError
+        If a correction method, alpha, or p-value is invalid. The input must
+        also contain :class:`TestResult` objects with numeric p-values.
+
+    Examples
+    --------
+    >>> adjusted = adjust_results(results, method="fdr_bh")
+    >>> corrected_p_values = [result.p_adjusted for result in adjusted]
+    """
     result_list = results if isinstance(results, list) else list(results)
     if not result_list:
         return []
@@ -91,7 +161,46 @@ def adjust_pairwise(
     alpha: float = 0.05,
     inplace: bool = False,
 ) -> pd.DataFrame:
-    """Return a pairwise comparison table with corrected p-values attached."""
+    """Add multiple-comparison corrections to a pairwise table.
+
+    The input table is expected to contain one p-value per comparison. All
+    existing columns are preserved and four correction columns are appended.
+
+    Parameters
+    ----------
+    pairwise:
+        Pairwise comparison table as a pandas dataframe.
+    p_col:
+        Name of the column containing the p-values to correct. The default is
+        ``"p"``.
+    method:
+        Multiple-comparison correction method accepted by
+        :func:`adjust_pvalues`. The default is ``"holm"``.
+    alpha:
+        Significance threshold used for the ``reject`` column. Must be
+        strictly between 0 and 1. The default is ``0.05``.
+    inplace:
+        If ``False`` (default), return a copy and leave ``pairwise`` unchanged.
+        If ``True``, add the correction columns to the supplied dataframe and
+        return it.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The pairwise table with ``p_adjusted``, ``reject``,
+        ``p_adjust_method``, and ``p_adjust_alpha`` columns.
+
+    Raises
+    ------
+    ValueError
+        If ``p_col`` is not an existing column or the correction inputs are
+        invalid.
+
+    Examples
+    --------
+    >>> adjusted = adjust_pairwise(pairwise, p_col="p", method="holm")
+    >>> corrected_p_values = adjusted["p_adjusted"]
+    """
     if p_col not in pairwise.columns:
         raise ValueError(f"p_col must name an existing p-value column, got {p_col!r}.")
 

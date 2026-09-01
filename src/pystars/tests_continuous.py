@@ -58,8 +58,55 @@ def ttest(
 ) -> TestResult:
     """Perform a t-test (Welch, Student's, or paired).
 
-    By default uses Welch's t-test (``welch=True``), which is safer for
-    biological data where equal variance is rarely guaranteed.
+    Independent samples use Welch's t-test by default, which does not assume
+    equal variances. Set ``welch=False`` to use Student's pooled-variance
+    t-test. If ``paired=True``, the function compares the two measurements for
+    each subject and ignores ``welch``.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column. Exactly two groups are required.
+    subject:
+        For long format paired data, the subject or matched-unit column.
+        Required when ``paired=True``.
+    paired:
+        If ``True``, perform a paired t-test on two measurements per subject.
+        If ``False`` (default), treat the two groups as independent.
+    welch:
+        For independent samples, use Welch's t-test when ``True`` (default) or
+        Student's t-test when ``False``. This option is ignored for paired data.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the two value-column names representing the groups.
+        Their order determines the order of the comparison.
+    subject_index:
+        For wide format, an optional subject-id column. If omitted, row
+        indices are used as matched subject labels.
+
+    Returns
+    -------
+    TestResult
+        A result containing the selected test name, t statistic, p-value,
+        Cohen's d, and the 95% confidence interval under ``effect_size``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid, the independent data does not contain
+        exactly two groups, or paired data lacks a subject column or has other
+        than two groups.
+
+    Examples
+    --------
+    >>> result = ttest(df, value="length", group="genotype", welch=True)
+    >>> result.test_name
+    "Welch's t-test"
     """
     data = normalize_data(
         df,
@@ -108,7 +155,48 @@ def mannwhitney(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """Perform the Mann-Whitney U test (non-parametric, 2 independent groups)."""
+    """Perform the Mann-Whitney U test for two independent groups.
+
+    This is a non-parametric alternative to an independent-samples t-test. It
+    tests whether the two groups have different distributions and is useful
+    when normality is not a reasonable assumption. Exactly two groups are
+    required.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column. Exactly two groups are required.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the two value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is not used because
+        this test treats observations as independent.
+
+    Returns
+    -------
+    TestResult
+        A result containing the Mann-Whitney ``U`` statistic, p-value, and the
+        common-language effect size (``CLES``) and rank-biserial correlation
+        (``RBC``) under ``effect_size``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or the data does not contain exactly
+        two groups.
+
+    Examples
+    --------
+    >>> result = mannwhitney(df, value="length", group="genotype")
+    >>> result.test_name
+    'Mann-Whitney U test'
+    """
     data = normalize_data(
         df,
         value=value,
@@ -142,7 +230,51 @@ def wilcoxon(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """Perform the Wilcoxon signed-rank test (non-parametric, paired)."""
+    """Perform the Wilcoxon signed-rank test for paired measurements.
+
+    The test compares two measurements from the same subjects without assuming
+    normally distributed paired differences. Exactly two groups and a subject
+    identifier are required. Subjects missing either measurement are excluded
+    by the paired-data pivot.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column. Exactly two groups are required.
+    subject:
+        For long format, the subject or matched-unit column. Required for
+        paired data.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the two value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. If omitted, row
+        indices are used as subject labels.
+
+    Returns
+    -------
+    TestResult
+        A result containing the Wilcoxon ``W`` statistic, p-value, and the
+        common-language effect size (``CLES``) and rank-biserial correlation
+        (``RBC``) under ``effect_size``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid, no subject column is available, or
+        the data does not contain exactly two groups.
+
+    Examples
+    --------
+    >>> result = wilcoxon(df, value="length", group="genotype", subject="animal")
+    >>> result.test_name
+    'Wilcoxon signed-rank test'
+    """
     data = normalize_data(
         df,
         value=value,
@@ -177,7 +309,53 @@ def anova(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """Perform one-way ANOVA (or Welch's ANOVA for unequal variances)."""
+    """Perform a one-way ANOVA or Welch's ANOVA across independent groups.
+
+    Use the classic one-way ANOVA when group variances can reasonably be
+    treated as equal. Set ``welch=True`` for Welch's ANOVA when variances are
+    unequal. A list passed to ``group`` is normalized into composite group
+    labels and is therefore analyzed as one group factor; use
+    :func:`anova_twoway` to report separate factorial effects.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns
+        whose combinations should be treated as groups. At least two groups
+        are required.
+    welch:
+        If ``True``, use Welch's ANOVA for unequal variances. If ``False``
+        (default), use classic one-way ANOVA.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is not used by this
+        independent-groups analysis.
+
+    Returns
+    -------
+    TestResult
+        A result containing the ANOVA ``F`` statistic, p-value, and partial
+        eta-squared (``np2``) under ``effect_size``. The test name is
+        ``"One-way ANOVA"`` or ``"Welch's ANOVA"``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two groups are present.
+
+    Examples
+    --------
+    >>> result = anova(df, value="length", group="treatment")
+    >>> result.test_name
+    'One-way ANOVA'
+    """
     data = normalize_data(
         df,
         value=value,
@@ -216,7 +394,49 @@ def kruskal(
     groups: list[str] | None = None,
     subject_index: str | None = None,
 ) -> TestResult:
-    """Perform the Kruskal-Wallis test (non-parametric, ≥2 independent groups)."""
+    """Perform the Kruskal-Wallis test for two or more independent groups.
+
+    This non-parametric omnibus test is an alternative to one-way ANOVA when
+    normality is not a reasonable assumption. It does not identify which
+    groups differ; use :func:`pystars.posthoc_dunn` for follow-up pairwise
+    comparisons.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe.
+    value:
+        For long format, the name of the numeric outcome column.
+    group:
+        For long format, the grouping column, or a list of factor columns
+        whose combinations should be treated as groups. At least two groups
+        are required.
+    format:
+        Input layout: ``"long"`` (default) or ``"wide"``.
+    groups:
+        For wide format, the value-column names representing the groups.
+    subject_index:
+        For wide format, an optional subject-id column. It is not used by this
+        independent-groups analysis.
+
+    Returns
+    -------
+    TestResult
+        A result containing the Kruskal-Wallis ``H`` statistic, p-value, and
+        epsilon-squared effect size (``epsilon_squared``), calculated as
+        ``H / (n - 1)``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two groups are present.
+
+    Examples
+    --------
+    >>> result = kruskal(df, value="length", group="treatment")
+    >>> result.test_name
+    'Kruskal-Wallis test'
+    """
     data = normalize_data(
         df,
         value=value,
@@ -251,9 +471,46 @@ def anova_twoway(
 ) -> TestResult:
     """Perform a two-way (factorial) ANOVA.
 
-    The ``group`` parameter must be a list of at least 2 factor column names.
-    The interaction term is reported as the main result; the full ANOVA table
-    (all factors + interaction) is stored in ``result.details``.
+    The ``group`` parameter must be a list of at least two factor column names.
+    The interaction term is reported as the main result when one is present;
+    if the backend does not produce an interaction row, the last non-residual
+    source is reported instead. The full ANOVA table, including all main
+    effects and interactions, is stored in ``result.details``.
+
+    Parameters
+    ----------
+    df:
+        Input observations as a pandas dataframe in long format.
+    value:
+        Name of the numeric outcome column.
+    group:
+        List of at least two factor column names. Factor combinations are also
+        represented by a composite ``"factor1::factor2"`` group label in the
+        normalized data.
+    format:
+        Input layout. Use ``"long"`` (default) for factorial data; wide input
+        has only one generated group column and cannot describe multiple
+        factors.
+
+    Returns
+    -------
+    TestResult
+        A result named for the reported ANOVA source, containing its ``F``
+        statistic, p-value, partial eta-squared (``np2``), and the complete
+        ANOVA table in ``details``.
+
+    Raises
+    ------
+    ValueError
+        If the input schema is invalid or fewer than two factor columns are
+        supplied.
+
+    Examples
+    --------
+    >>> result = anova_twoway(
+    ...     df, value="length", group=["genotype", "time"]
+    ... )
+    >>> details = result.details
     """
     data = normalize_data(df, value=value, group=group, format=format)
     if len(data.group_cols) < 2:
