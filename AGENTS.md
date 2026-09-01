@@ -134,6 +134,9 @@ Key contracts:
   original direction (inverted y axes stay inverted).
 - Letter mode requires `comparisons="all"` and a complete undirected
   pairwise graph; missing pairs raise an error naming them.
+- Label formatting: default 4-significant-figure/scientific; `p_decimals=N`
+  switches to fixed decimals with a `<` threshold when the value rounds to
+  zero; ignored in stars/letters modes.
 - Validation runs in `matplotlib.rc_context(rc=rc)`, so `rc` is scoped to
   the call and never mutates global `rcParams`.
 - Reject horizontal `BarContainer`, polar/3-D axes, non-`Axes` objects,

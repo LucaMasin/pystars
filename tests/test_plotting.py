@@ -411,7 +411,79 @@ class TestSelectionFormattingLayout:
         result = _direct_two_group_result(p=0.003)
         ps.annotate_significance(ax, result, groups=("ctrl", "trt"), mode="pvalue")
         _, texts = _annotation_artists(ax)
-        assert texts[0].get_text().startswith("p=")
+        assert texts[0].get_text() == "0.003"
+
+    def test_p_decimals_pvalue_mode_uses_threshold_when_value_rounds_to_zero(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.003)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"), mode="pvalue", p_decimals=2)
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "<0.01"
+
+    def test_p_decimals_value_mode(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.123456)
+        ps.annotate_significance(
+            ax,
+            result,
+            groups=("ctrl", "trt"),
+            mode="value",
+            p_decimals=3,
+            comparisons="all",
+        )
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "0.123"
+
+    def test_p_decimals_threshold_for_tiny_p(self):
+        result = _direct_two_group_result(p=1.2e-7)
+
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"), mode="pvalue", p_decimals=3)
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "<0.001"
+
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"), mode="value", p_decimals=3)
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "<0.001"
+
+    def test_p_decimals_rounds_to_nonzero(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.00051)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"), mode="value", p_decimals=3)
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "0.001"
+
+    def test_p_decimals_default_unchanged(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.123456)
+        ps.annotate_significance(
+            ax, result, groups=("ctrl", "trt"), mode="value", comparisons="all"
+        )
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "0.1235"
+
+    def test_p_decimals_ignored_for_stars(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.03)
+        ps.annotate_significance(ax, result, groups=("ctrl", "trt"), mode="stars", p_decimals=2)
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "*"
+
+    def test_p_decimals_threads_through_pairwise_tables(self):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax, heights=(1.0, 3.0, 5.0), labels=("a", "b", "c"))
+        result = _posthoc_pairwise_result([("a", "b", 0.0034)])
+        ps.annotate_significance(ax, result, mode="pvalue", p_decimals=2)
+        _, texts = _annotation_artists(ax)
+        assert texts[0].get_text() == "<0.01"
 
     def test_value_mode_format(self):
         fig, ax = plt.subplots()
@@ -922,6 +994,14 @@ class TestCompactLettersAndValidation:
         result = _direct_two_group_result(p=0.01)
         with pytest.raises(ValueError, match="y_offset"):
             ps.annotate_significance(ax, result, groups=("ctrl", "trt"), y_offset=bad)
+
+    @pytest.mark.parametrize("bad", [-1, 0, True, 2.5, "2"])
+    def test_invalid_p_decimals_raises(self, bad):
+        fig, ax = plt.subplots()
+        _draw_simple_bar(ax)
+        result = _direct_two_group_result(p=0.01)
+        with pytest.raises(ValueError, match="p_decimals"):
+            ps.annotate_significance(ax, result, groups=("ctrl", "trt"), p_decimals=bad)
 
     def test_invalid_groups_length_raises(self):
         fig, ax = plt.subplots()

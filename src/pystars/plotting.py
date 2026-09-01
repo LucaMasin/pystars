@@ -81,6 +81,7 @@ def annotate_significance(
     bracket: Literal["line", "square"] = "line",
     alpha: float = 0.05,
     p_column: str = "auto",
+    p_decimals: int | None = None,
     color: str | None = "black",
     y_offset: float = 0.0,
     rc: Mapping[str, Any] | None = None,
@@ -133,9 +134,9 @@ def annotate_significance(
         hue plot. Tuple mappings require a visible legend and mappings for all
         selected comparison endpoints.
     mode:
-        Label format: ``"stars"`` (default), ``"pvalue"`` for labels such as
-        ``"p=0.01"``, ``"value"`` for the formatted p-value alone, or
-        ``"letters"`` for a compact-letter display. Star labels use ``*`` for
+        Label format: ``"stars"`` (default), ``"pvalue"`` or ``"value"`` for
+        the formatted p-value, or ``"letters"`` for a compact-letter display.
+        Star labels use ``*`` for
         ``p <= 0.05``, ``**`` for ``p <= 0.01``, ``***`` for ``p <= 0.001``,
         and ``****`` for ``p <= 0.0001``; larger p-values use ``"ns"``.
     bracket:
@@ -148,6 +149,11 @@ def annotate_significance(
         P-value column to read from pairwise tables. ``"auto"`` prefers
         ``p_adjusted`` when it has at least one non-null value, then falls back
         to ``p``. Pass a column name to select it explicitly.
+    p_decimals:
+        Optional fixed number of decimal places for ``"pvalue"`` and
+        ``"value"`` labels. It must be an integer of at least 1. Values that
+        would round to zero are shown with a ``<`` threshold instead. Ignored
+        in ``"stars"`` and ``"letters"`` modes.
     color:
         Color for brackets and labels. The default is ``"black"``; ``None``
         leaves the artist default in place unless overridden in the style
@@ -178,7 +184,8 @@ def annotate_significance(
     ValueError
         If the axes, options, comparison schema, p-values, group labels, or
         pairwise graph are invalid; if a direct result lacks ``groups``; or if
-        rendered plot geometry cannot resolve a requested category.
+        rendered plot geometry cannot resolve a requested category. This also
+        includes a ``p_decimals`` value that is not an integer of at least 1.
 
     Notes
     -----
@@ -198,6 +205,7 @@ def annotate_significance(
         bracket=bracket,
         alpha=alpha,
         p_column=p_column,
+        p_decimals=p_decimals,
         label_map=label_map,
         y_offset=y_offset,
         rc=rc,
@@ -259,6 +267,7 @@ def annotate_significance(
                 bracket=bracket,
                 color=color,
                 y_offset_display=y_offset_display,
+                p_decimals=p_decimals,
                 line_kws=line_kws,
                 text_kws=text_kws,
             )
@@ -275,6 +284,7 @@ def _validate_options(
     bracket: Any,
     alpha: Any,
     p_column: Any,
+    p_decimals: Any,
     label_map: Any,
     y_offset: Any,
     rc: Any,
@@ -312,6 +322,10 @@ def _validate_options(
         raise ValueError("alpha must be a finite real number strictly between 0 and 1.")
     if not isinstance(p_column, str) or p_column == "":
         raise ValueError("p_column must be 'auto' or a non-empty string.")
+    if p_decimals is not None and (
+        isinstance(p_decimals, bool) or not isinstance(p_decimals, int) or p_decimals < 1
+    ):
+        raise ValueError("p_decimals must be None or an integer of at least 1.")
     if isinstance(y_offset, bool) or not isinstance(y_offset, Real):
         raise ValueError("y_offset must be a finite real number (display points).")
     y_offset_f = float(y_offset)
@@ -1018,6 +1032,7 @@ def _draw_brackets(
     bracket: str,
     color: str | None,
     y_offset_display: float,
+    p_decimals: int | None,
     line_kws: Mapping[str, Any] | None,
     text_kws: Mapping[str, Any] | None,
 ) -> None:
@@ -1145,7 +1160,7 @@ def _draw_brackets(
         line.set_zorder(max(line_style.get("zorder", 3.0), 3.0))
         ax.add_line(line)
 
-        label_text = _format_label(p, mode=mode)
+        label_text = _format_label(p, mode=mode, p_decimals=p_decimals)
         text_x_data = (left_x + right_x) / 2.0
         text_y_data = to_data_y(text_y_disp)
         text = Text(
@@ -1163,7 +1178,7 @@ def _draw_brackets(
         ax.add_artist(text)
 
 
-def _format_label(p: float, *, mode: str) -> str:
+def _format_label(p: float, *, mode: str, p_decimals: int | None = None) -> str:
     if mode == "stars":
         if p <= 1e-4:
             return "****"
@@ -1174,13 +1189,15 @@ def _format_label(p: float, *, mode: str) -> str:
         if p <= 0.05:
             return "*"
         return "ns"
-    fmt = _format_pvalue(p)
-    if mode == "pvalue":
-        return f"p={fmt}"
+    fmt = _format_pvalue(p, decimals=p_decimals)
     return fmt
 
 
-def _format_pvalue(p: float) -> str:
+def _format_pvalue(p: float, *, decimals: int | None = None) -> str:
+    if decimals is not None:
+        if round(p, decimals) == 0.0:
+            return f"<{10**-decimals:.{decimals}f}"
+        return f"{p:.{decimals}f}"
     if p < 1e-4:
         return f"{p:.2e}"
     return f"{p:.4g}"

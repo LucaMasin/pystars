@@ -259,6 +259,7 @@ ps.annotate_significance(
     ax,
     result,
     mode="pvalue",      # one of "stars" (default), "pvalue", "value", "letters"
+    p_decimals=2,        # fixed decimal places for "pvalue" / "value" labels
     bracket="line",     # "line" (default) or "square" (with caps)
     color="black",      # default is "black"; pass any Matplotlib color
     y_offset=6,         # shift the whole annotation stack in display points;
@@ -276,9 +277,11 @@ labels in `mode="letters"`. The visual direction ("up" / "down") is
 consistent on linear, log, and inverted axes because the offset is applied in
 display space.
 
-P-value formatting is fixed and independent of the selected `alpha`:
-scientific notation with two significant decimals for `p < 1e-4`, otherwise
-a four-significant-figure representation.
+By default, p-values use four significant figures, with scientific notation
+below `1e-4`. Set `p_decimals=N` for fixed decimal places in `pvalue` and
+`value` modes; both render the number without a `p=` prefix. Values that would
+round to zero use a `<...` threshold instead. This option is ignored in
+`stars` and `letters` modes.
 
 The function returns the same `ax` you passed in, so calls chain with other
 Matplotlib operations.
