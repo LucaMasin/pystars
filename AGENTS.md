@@ -5,9 +5,38 @@ This is the reporsitory for a library that automates significance testing for co
 ## Working Rules
 
 - Use `uv` for project commands: `uv run ...`, not bare `python`, `pip`, or global tools. Load the `uv` skill for details.
-- After adding or changing a feature, check `AGENTS.md` and `README.md` and update them if the guidance or user-facing docs are stale.
-- The README file should be focused on user-facing documentation, while AGENTS.md should be focused on internal guidance for contributors and agents. If you see something in the README that is more about internal implementation or contributor guidance, move it to AGENTS.md.
+- Keep user-facing documentation current, but proportionally: routine changes usually need nothing, behavior changes update the relevant `docs/` page, and `README.md` changes are rare (see Documentation below).
 - Use test driven development (TDD) for new features. Add a test in `tests/` before implementing the feature. We do not need to test every single function, but we should have a test for each feature and edge case for the core logic. Chek the TDD section below for details.
+
+## Documentation
+
+The documentation is split by audience and depth. Keep each layer doing one
+job — most commits should not touch documentation at all.
+
+- `README.md` is a minimal landing page: one-paragraph pitch, installation, a
+  runnable quick start, and links. It is not a manual. Never add per-feature
+  detail, tables of options, or implementation notes to it.
+- `docs/` holds the package documentation pages:
+  - `docs/user-guide.md` — dispatcher, direct tests, assumption checks,
+    post-hoc, long/wide input, export, multiple-comparison corrections.
+  - `docs/plotting.md` — `annotate_significance` usage and options.
+  - `docs/flowchart.md` — the test-selection flowchart the dispatcher implements.
+  - `docs/conda-uv-environment.md` — development environment setup.
+- `AGENTS.md` is internal guidance for contributors and agents: architecture,
+  contracts, rules, roadmap.
+
+Update policy:
+
+- User-facing behavior changed or something in a `docs/` page is now wrong →
+  update that page in the same change.
+- Internal-only work (refactors, tests, tooling) → no documentation change
+  needed.
+- `README.md` changes are rare and reserved for the pitch, installation, the
+  quick start, or the link list — e.g. a new public API that changes how a new
+  user gets started. Adding a feature is not, by itself, a reason to touch
+  the README.
+- `AGENTS.md` changes when internal guidance or architecture changes (module
+  layout, dispatcher rules, contracts, rules in this file).
 
 ## Architecture
 
@@ -170,8 +199,10 @@ Key contracts:
    selected for data matching that branch.
 4. Re-export the new function from `src/pystars/__init__.py` and add it to
    `__all__`.
-5. Update `README.md` (user-facing) and, if the dispatcher rules changed, the
-   table above in this file.
+5. If the new function changes what a `docs/` page describes (e.g.
+   `user-guide.md`), update that page. Update the dispatcher rules in this
+   file if the flowchart changed. Do not add the feature to `README.md` —
+   see the Documentation section above.
 6. Run `uv run pytest`, `uv run ruff check .`, `uv run ruff format .`.
 
 ## Roadmap
