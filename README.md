@@ -289,6 +289,10 @@ Matplotlib operations.
 
 ## Development
 
+To use the locked project dependencies inside a Conda environment while
+keeping this checkout editable, see the
+[Conda + uv environment guide](docs/conda-uv-environment.md).
+
 ### Features
 
 Minimal features required:
