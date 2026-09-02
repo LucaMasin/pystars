@@ -91,6 +91,18 @@ def _annotation_artists(ax):
     return lines, texts
 
 
+def _summary_marker_lines(ax):
+    """Return non-empty marker-bearing lines, excluding annotation artists."""
+    return [
+        line
+        for line in ax.lines
+        if line.get_gid() != "pystars_annotation"
+        and line.get_marker() not in (None, "", "None", "none", " ")
+        and len(line.get_xdata()) > 0
+        and len(line.get_xdata()) == len(line.get_ydata())
+    ]
+
+
 class _CollidingLabel:
     """Distinct labels that intentionally share a hash value."""
 
@@ -278,6 +290,223 @@ class TestArtistResolver:
         assert len(lines) == 1
         xs = list(lines[0].get_xdata())
         assert xs[0] != xs[-1]
+
+    def test_seaborn_pointplot_scalar_endpoints_use_ticks(self):
+        sns = pytest.importorskip("seaborn")
+        df = pd.DataFrame(
+            {
+                "group": ["a"] * 5 + ["b"] * 5,
+                "value": [1.0, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.5, 8.0, 9.0],
+            }
+        )
+        fig, ax = plt.subplots()
+        sns.pointplot(
+            data=df,
+            x="group",
+            y="value",
+            errorbar=("ci", 95),
+            capsize=0.2,
+            n_boot=100,
+            seed=0,
+            ax=ax,
+        )
+
+        ps.annotate_significance(ax, _direct_two_group_result(), groups=("a", "b"))
+        lines, _ = _annotation_artists(ax)
+        assert len(lines) == 1
+        assert list(lines[0].get_xdata()) == list(ax.get_xticks())
+
+    def test_seaborn_pointplot_hue_uses_dodged_summary_centers(self):
+        sns = pytest.importorskip("seaborn")
+        df = pd.DataFrame(
+            {
+                "x": (["a"] * 6 + ["b"] * 6),
+                "h": (["h1", "h2"] * 6),
+                "value": [1.0, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.5, 8.0, 9.0, 10.0, 11.0],
+            }
+        )
+        fig, ax = plt.subplots()
+        sns.pointplot(
+            data=df,
+            x="x",
+            y="value",
+            hue="h",
+            dodge=0.4,
+            errorbar=("ci", 95),
+            capsize=0.2,
+            n_boot=100,
+            seed=0,
+            ax=ax,
+        )
+        h1_color = matplotlib.colors.to_rgba(ax.get_legend().legend_handles[0].get_color())
+        expected_x = [
+            float(x)
+            for line in _summary_marker_lines(ax)
+            if np.allclose(matplotlib.colors.to_rgba(line.get_color()), h1_color)
+            for x in line.get_xdata()
+        ]
+
+        ps.annotate_significance(
+            ax,
+            _direct_two_group_result(),
+            groups=("a::h1", "b::h1"),
+            label_map={"a::h1": ("a", "h1"), "b::h1": ("b", "h1")},
+        )
+        lines, _ = _annotation_artists(ax)
+        assert len(lines) == 1
+        assert sorted(lines[0].get_xdata()) == pytest.approx(sorted(expected_x))
+
+    def test_layered_swarm_and_pointplot_prefers_summary_centers(self):
+        sns = pytest.importorskip("seaborn")
+        base_values = [0.2, 0.201, 0.29561, 0.29664, 0.2, 0.201]
+        rows = []
+        for x in ("a", "b"):
+            for hue in ("h1", "h2"):
+                rows.extend({"x": x, "h": hue, "value": value} for value in base_values)
+        df = pd.DataFrame(rows)
+        fig, ax = plt.subplots()
+        sns.swarmplot(data=df, x="x", y="value", hue="h", dodge=True, size=5, ax=ax)
+        sns.pointplot(
+            data=df,
+            x="x",
+            y="value",
+            hue="h",
+            dodge=0.4,
+            errorbar=("ci", 95),
+            capsize=0.2,
+            n_boot=100,
+            seed=0,
+            ax=ax,
+        )
+        h1_color = matplotlib.colors.to_rgba(ax.get_legend().legend_handles[0].get_color())
+        summary_x = [
+            float(x)
+            for line in _summary_marker_lines(ax)
+            if np.allclose(matplotlib.colors.to_rgba(line.get_color()), h1_color)
+            for x in line.get_xdata()
+        ]
+        h1_swarms = [
+            coll
+            for coll in ax.collections
+            if len(coll.get_offsets()) and np.allclose(coll.get_facecolor()[0], h1_color)
+        ]
+        swarm_medians = sorted(
+            float(np.median(np.asarray(coll.get_offsets())[:, 0])) for coll in h1_swarms
+        )
+        assert any(
+            abs(median - center) > 1e-3
+            for median, center in zip(swarm_medians, summary_x, strict=True)
+        )
+
+        ps.annotate_significance(
+            ax,
+            _direct_two_group_result(),
+            groups=("a::h1", "b::h1"),
+            label_map={"a::h1": ("a", "h1"), "b::h1": ("b", "h1")},
+        )
+        lines, _ = _annotation_artists(ax)
+        assert len(lines) == 1
+        assert sorted(lines[0].get_xdata()) == pytest.approx(sorted(summary_x))
+
+    def test_bracket_clears_capped_pointplot_confidence_intervals(self):
+        sns = pytest.importorskip("seaborn")
+        df = pd.DataFrame(
+            {
+                "group": ["a"] * 5 + ["b"] * 5,
+                "value": [1.0, 2.0, 2.0, 3.0, 4.0, 5.0, 7.0, 8.0, 9.0, 12.0],
+            }
+        )
+        fig, ax = plt.subplots()
+        sns.pointplot(
+            data=df,
+            x="group",
+            y="value",
+            errorbar=("ci", 95),
+            capsize=0.2,
+            n_boot=100,
+            seed=0,
+            ax=ax,
+        )
+        summary_y = np.concatenate(
+            [np.asarray(line.get_ydata(), dtype=float) for line in _summary_marker_lines(ax)]
+        )
+        errorbar_y = np.concatenate(
+            [
+                np.asarray(line.get_ydata(), dtype=float)[
+                    np.isfinite(np.asarray(line.get_ydata(), dtype=float))
+                ]
+                for line in ax.lines
+                if line.get_marker() in (None, "", "None", "none", " ") and len(line.get_ydata())
+            ]
+        )
+        assert errorbar_y.size
+        assert np.max(errorbar_y) > np.max(summary_y)
+        assert any(np.isnan(line.get_xdata()).any() for line in ax.lines if len(line.get_xdata()))
+        ax.set_ylim(0.0, 9.0)
+
+        ps.annotate_significance(ax, _direct_two_group_result(), groups=("a", "b"))
+        fig.canvas.draw()
+        lines, _ = _annotation_artists(ax)
+        bracket_top = ax.transData.transform((0.0, lines[0].get_ydata()[0]))[1]
+        errorbar_top = max(ax.transData.transform((0.0, float(value)))[1] for value in errorbar_y)
+        assert bracket_top > errorbar_top
+
+    def test_pure_dodged_swarm_uses_nominal_cell_centers(self):
+        sns = pytest.importorskip("seaborn")
+        base_values = [0.2, 0.201, 0.29561, 0.29664, 0.2, 0.201]
+        rows = []
+        for x in ("a", "b"):
+            for hue in ("h1", "h2"):
+                rows.extend({"x": x, "h": hue, "value": value} for value in base_values)
+        df = pd.DataFrame(rows)
+        fig, ax = plt.subplots()
+        sns.swarmplot(data=df, x="x", y="value", hue="h", dodge=True, size=5, ax=ax)
+        h1_color = matplotlib.colors.to_rgba(ax.get_legend().legend_handles[0].get_color())
+        h1_swarms = [
+            coll
+            for coll in ax.collections
+            if len(coll.get_offsets()) and np.allclose(coll.get_facecolor()[0], h1_color)
+        ]
+        h1_swarms.sort(key=lambda coll: float(np.mean(np.asarray(coll.get_offsets())[:, 0])))
+        assert len(h1_swarms) == 2
+        swarm_maxima = [float(np.max(np.asarray(coll.get_offsets())[:, 0])) for coll in h1_swarms]
+        assert any(
+            abs(maximum - center) > 1e-3
+            for maximum, center in zip(swarm_maxima, (-0.2, 0.8), strict=True)
+        )
+
+        ps.annotate_significance(
+            ax,
+            _direct_two_group_result(),
+            groups=("a::h1", "b::h1"),
+            label_map={"a::h1": ("a", "h1"), "b::h1": ("b", "h1")},
+        )
+        lines, _ = _annotation_artists(ax)
+        assert len(lines) == 1
+        assert list(lines[0].get_xdata()) == pytest.approx([-0.2, 0.8])
+
+    def test_horizontal_reference_line_does_not_override_dodged_centers(self):
+        sns = pytest.importorskip("seaborn")
+        rows = []
+        for x in ("a", "b"):
+            for hue in ("h1", "h2"):
+                rows.extend({"x": x, "h": hue, "value": value} for value in (1.0, 2.0, 3.0))
+        df = pd.DataFrame(rows)
+        fig, ax = plt.subplots()
+        sns.stripplot(data=df, x="x", y="value", hue="h", dodge=True, jitter=False, ax=ax)
+        h1_color = ax.get_legend().legend_handles[0].get_color()
+        ax.axhline(4.0, color=h1_color)
+
+        ps.annotate_significance(
+            ax,
+            _direct_two_group_result(),
+            groups=("a::h1", "b::h1"),
+            label_map={"a::h1": ("a", "h1"), "b::h1": ("b", "h1")},
+        )
+
+        lines, _ = _annotation_artists(ax)
+        assert len(lines) == 1
+        assert list(lines[0].get_xdata()) == pytest.approx([-0.2, 0.8])
 
     def test_partial_tuple_label_map_raises(self):
         """When some selected comparisons lack tuple mappings, raise helpfully."""

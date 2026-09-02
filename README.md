@@ -242,6 +242,12 @@ ps.annotate_significance(
 )
 ```
 
+Scalar categories are anchored to their exact x-tick positions. Tuple mappings
+are anchored to the nominal center of the selected dodged cell. On layered
+raw-point and summary plots, summary markers and error bars determine the
+horizontal position, while all rendered data artists contribute to vertical
+clearance.
+
 #### Compact-letter display
 
 With `mode="letters"`, draw a compact-letter display above each category

@@ -124,6 +124,17 @@ Key contracts:
 - Tuple `label_map` entries (`(x_category, hue_category)`) target a specific
   dodged cell on a Seaborn hue plot. Scalar `label_map` entries target one
   x tick.
+- Scalar targets always use the exact x-tick center. Tuple targets resolve
+  horizontal position in this order: matching vertical bar, summary marker,
+  vertical error-bar stem, then the inferred center of a point collection.
+  Conflicting candidates at the same priority raise an ambiguity error.
+- For vertical clearance, bars, raw point collections, summary markers, and
+  error-bar stems/caps all contribute. In layered raw-plus-summary plots,
+  summary geometry controls x placement without excluding raw-point geometry
+  from clearance.
+- Capped Seaborn `Line2D` error bars may store caps and stems as finite runs
+  separated by `NaN`; parse the vertical stem runs independently. Do not treat
+  standalone horizontal lines as caps because they may be reference lines.
 - The resolver calls `ax.figure.canvas.draw()` before reading artist
   geometry, so swarm placement is finalized. Artists created by this module
   are tagged with `gid="pystars_annotation"` so a later call never treats

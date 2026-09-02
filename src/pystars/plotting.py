@@ -66,6 +66,14 @@ class _GroupGeometry:
     y_top: float  # display-space y of the highest rendered data artist
 
 
+@dataclass(frozen=True)
+class _ArtistGeometry:
+    x_center: float
+    y_top: float  # display-space y of the highest rendered extent
+    color: tuple[float, float, float, float] | None
+    kind: str
+
+
 # ============================================================== public API
 
 
@@ -689,6 +697,7 @@ def _resolve_positions(
             raise ValueError("Hue resolution requires a visible legend on the axes.")
 
     bars = _collect_bar_geometry(ax)
+    summaries = _collect_summary_geometry(ax)
     points = _collect_point_geometry(ax)
     errorbars = _collect_errorbar_geometry(ax)
     spacing = _category_spacing(bars, points, tick_positions)
@@ -704,6 +713,7 @@ def _resolve_positions(
                 tick_texts,
                 tick_positions,
                 bars,
+                summaries,
                 points,
                 errorbars,
                 legend_lookup,
@@ -713,8 +723,8 @@ def _resolve_positions(
 
 
 def _category_spacing(
-    bars: list[tuple[float, float, Any, Any]],
-    points: list[tuple[float, float, Any]],
+    bars: list[_ArtistGeometry],
+    points: list[_ArtistGeometry],
     tick_positions: list[float],
 ) -> float:
     """Tolerance (in data x) for assigning a bar/point to a category tick.
@@ -738,9 +748,10 @@ def _resolve_one(
     target: object,
     tick_texts: list[str],
     tick_positions: list[float],
-    bars: list[tuple[float, float, Any, Any]],
-    points: list[tuple[float, float, Any]],
-    errorbars: list[tuple[float, float]],
+    bars: list[_ArtistGeometry],
+    summaries: list[_ArtistGeometry],
+    points: list[_ArtistGeometry],
+    errorbars: list[_ArtistGeometry],
     legend_lookup: dict[str, tuple[float, float, float, float]] | None,
     spacing: float,
 ) -> _GroupGeometry:
@@ -761,8 +772,25 @@ def _resolve_one(
             )
         x_center_tick = tick_positions[tick_texts.index(x_label)]
         hue_color = legend_lookup[hue_label]
-        x_center = _find_dodged_center(x_center_tick, bars, points, hue_color, spacing)
-        y_top = _combined_top(x_center_tick, x_center, bars, points, errorbars, hue_color, spacing)
+        x_center = _resolve_dodged_anchor(
+            x_center_tick,
+            bars,
+            summaries,
+            errorbars,
+            points,
+            hue_color,
+            spacing,
+        )
+        y_top = _resolve_y_top(
+            x_center_tick,
+            x_center,
+            bars,
+            summaries,
+            errorbars,
+            points,
+            hue_color,
+            spacing,
+        )
     else:
         if target not in tick_texts:
             raise ValueError(
@@ -772,78 +800,89 @@ def _resolve_one(
             )
         x_center_tick = tick_positions[tick_texts.index(target)]
         x_center = x_center_tick
-        y_top = _combined_top(x_center_tick, x_center, bars, points, errorbars, None, spacing)
+        y_top = _resolve_y_top(
+            x_center_tick,
+            x_center,
+            bars,
+            summaries,
+            errorbars,
+            points,
+            None,
+            spacing,
+        )
     return _GroupGeometry(x_center=x_center, y_top=y_top)
 
 
-def _find_dodged_center(
+def _resolve_dodged_anchor(
     x_center_tick: float,
-    bars: list[tuple[float, float, Any, Any]],
-    points: list[tuple[float, float, Any]],
+    bars: list[_ArtistGeometry],
+    summaries: list[_ArtistGeometry],
+    errorbars: list[_ArtistGeometry],
+    points: list[_ArtistGeometry],
     hue_color: tuple[float, float, float, float],
     spacing: float,
 ) -> float:
-    bar_matches: list[float] = []
-    for center, _top, face, _edge in bars:
-        if _color_close(face, hue_color) and abs(center - x_center_tick) <= spacing:
-            bar_matches.append(center)
-    if bar_matches:
-        unique = {round(c, 9) for c in bar_matches}
+    for kind, candidates in (
+        ("bar", bars),
+        ("summary", summaries),
+        ("errorbar", errorbars),
+        ("points", points),
+    ):
+        near = [artist for artist in candidates if abs(artist.x_center - x_center_tick) <= spacing]
+        if not near:
+            continue
+        color_matches = [artist for artist in near if _color_close(artist.color, hue_color)]
+        # If an artist has no usable color, its x position is the only
+        # available discriminator. Never use a different known hue silently.
+        matches = color_matches or [artist for artist in near if artist.color is None]
+        if not matches:
+            continue
+        unique = {round(artist.x_center, 9) for artist in matches}
         if len(unique) > 1:
+            kind_label = {
+                "bar": "bar",
+                "summary": "summary-marker",
+                "errorbar": "error-bar",
+                "points": "point-collection",
+            }[kind]
             raise ValueError(
-                "Multiple bar candidates match the requested hue color near "
+                f"Multiple {kind_label} candidates match the requested hue near "
                 f"x={x_center_tick}; cannot resolve a unique dodged position."
             )
-        return bar_matches[0]
-    point_matches: list[float] = []
-    for center, _top, color in points:
-        if _color_close(color, hue_color) and abs(center - x_center_tick) <= spacing:
-            point_matches.append(center)
-    if point_matches:
-        unique = {round(c, 9) for c in point_matches}
-        if len(unique) > 1:
-            raise ValueError(
-                "Multiple point candidates match the requested hue color near "
-                f"x={x_center_tick}; cannot resolve a unique dodged position."
-            )
-        return point_matches[0]
+        return float(matches[0].x_center)
     raise ValueError(
-        f"Could not find a rendered bar or point near x={x_center_tick} for the "
-        "requested hue. Pass a label_map entry that matches an existing dodged "
-        "cell."
+        f"Could not find a rendered bar, summary marker, error bar, or point "
+        f"near x={x_center_tick} for the requested hue. Pass a label_map entry "
+        "that matches an existing dodged cell."
     )
 
 
-def _combined_top(
+def _resolve_y_top(
     x_center_tick: float,
     x_center: float,
-    bars: list[tuple[float, float, Any, Any]],
-    points: list[tuple[float, float, Any]],
-    errorbars: list[tuple[float, float]],
+    bars: list[_ArtistGeometry],
+    summaries: list[_ArtistGeometry],
+    errorbars: list[_ArtistGeometry],
+    points: list[_ArtistGeometry],
     hue_color: tuple[float, float, float, float] | None,
     spacing: float,
 ) -> float:
     tops: list[float] = []
-    for center, top, face, _edge in bars:
-        if hue_color is not None and not _color_close(face, hue_color):
+    for artist in (*bars, *summaries, *errorbars, *points):
+        if abs(artist.x_center - x_center_tick) > spacing:
             continue
-        if abs(center - x_center_tick) <= spacing:
-            if not np.isnan(top):
-                tops.append(top)
-    for center, top, color in points:
-        if hue_color is not None and not _color_close(color, hue_color):
-            continue
-        if abs(center - x_center_tick) <= spacing:
-            if not np.isnan(top):
-                tops.append(top)
-    for center, top in errorbars:
-        if hue_color is not None:
-            if not np.isclose(center, x_center, rtol=0.0, atol=1e-9):
-                continue
-        elif abs(center - x_center_tick) > spacing:
-            continue
-        if not np.isnan(top):
-            tops.append(top)
+        if hue_color is None:
+            matches = True
+        else:
+            matches = _color_close(artist.color, hue_color)
+            # Some error-bar artists use a neutral color. Their exact x position
+            # is sufficient to associate them with the selected dodged cell.
+            if not matches and artist.kind == "errorbar":
+                matches = bool(np.isclose(artist.x_center, x_center, rtol=0.0, atol=1e-9))
+            if not matches and artist.color is None:
+                matches = bool(np.isclose(artist.x_center, x_center, rtol=0.0, atol=1e-9))
+        if matches and not np.isnan(artist.y_top):
+            tops.append(artist.y_top)
     if not tops:
         return float("nan")
     return max(tops)
@@ -858,10 +897,10 @@ def _color_close(
     return all(abs(x - y) < 1e-3 for x, y in zip(a, b, strict=False))
 
 
-def _collect_bar_geometry(ax: Axes) -> list[tuple[float, float, Any, Any]]:
-    """Return (x_center, visual_top, face_rgba, edge_rgba) for vertical bars."""
+def _collect_bar_geometry(ax: Axes) -> list[_ArtistGeometry]:
+    """Collect centers and visual tops for vertical bars."""
     trans = ax.transData
-    out: list[tuple[float, float, Any, Any]] = []
+    out: list[_ArtistGeometry] = []
     for container in ax.containers:
         if getattr(container, "orientation", "vertical") != "vertical":
             continue
@@ -879,13 +918,56 @@ def _collect_bar_geometry(ax: Axes) -> list[tuple[float, float, Any, Any]]:
             tops_disp = _max_visual_y(trans, [(0.0, y0), (0.0, y0 + patch.get_height())])
             face = patch.get_facecolor()
             edge = patch.get_edgecolor()
-            out.append((center, tops_disp, _to_rgba(face), _to_rgba(edge)))
+            out.append(
+                _ArtistGeometry(
+                    x_center=center,
+                    y_top=tops_disp,
+                    color=_preferred_color(face, edge),
+                    kind="bar",
+                )
+            )
     return out
 
 
-def _collect_point_geometry(ax: Axes) -> list[tuple[float, float, Any]]:
+def _collect_summary_geometry(ax: Axes) -> list[_ArtistGeometry]:
+    """Collect finite marker locations from point-estimate lines."""
     trans = ax.transData
-    out: list[tuple[float, float, Any]] = []
+    out: list[_ArtistGeometry] = []
+    for line in ax.lines:
+        if getattr(line, "get_gid", lambda: None)() == _ANNOTATION_GID:
+            continue
+        if not _is_summary_marker(line):
+            continue
+        try:
+            xs = np.asarray(line.get_xdata(orig=False), dtype=float)
+            ys = np.asarray(line.get_ydata(orig=False), dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if len(xs) == 0 or len(xs) != len(ys):
+            continue
+        color = _preferred_color(
+            line.get_markerfacecolor(),
+            line.get_markeredgecolor(),
+            line.get_color(),
+        )
+        for x, y in zip(xs, ys, strict=False):
+            if not np.isfinite(x) or not np.isfinite(y):
+                continue
+            out.append(
+                _ArtistGeometry(
+                    x_center=float(x),
+                    y_top=_max_visual_y(trans, [(float(x), float(y))]),
+                    color=color,
+                    kind="summary",
+                )
+            )
+    return out
+
+
+def _collect_point_geometry(ax: Axes) -> list[_ArtistGeometry]:
+    """Collect centers and visual tops for raw point collections."""
+    trans = ax.transData
+    out: list[_ArtistGeometry] = []
     for coll in ax.collections:
         if not isinstance(coll, PathCollection):
             continue
@@ -893,6 +975,12 @@ def _collect_point_geometry(ax: Axes) -> list[tuple[float, float, Any]]:
             continue
         offsets = coll.get_offsets()
         if offsets is None or len(offsets) == 0:
+            continue
+        offsets_array = np.ma.asarray(offsets, dtype=float).filled(np.nan)
+        if offsets_array.ndim != 2 or offsets_array.shape[1] != 2:
+            continue
+        finite = np.isfinite(offsets_array).all(axis=1)
+        if not finite.any():
             continue
         facecolors = coll.get_facecolor()
         if facecolors is None or len(facecolors) == 0:
@@ -906,45 +994,107 @@ def _collect_point_geometry(ax: Axes) -> list[tuple[float, float, Any]]:
                     "Pass a label_map of (x, hue) tuples to target a single "
                     "hue."
                 )
-        xs = offsets[:, 0]
-        ys = offsets[:, 1]
-        x_center = float(np.median(xs))
-        tops = _max_visual_y(trans, [(0.0, float(y)) for y in ys])
-        out.append((x_center, tops, _to_rgba(first)))
+        finite_offsets = offsets_array[finite]
+        xs = finite_offsets[:, 0]
+        rounded_xs = np.round(xs, 9)
+        unique_xs, counts = np.unique(rounded_xs, return_counts=True)
+        if counts.max() >= 2:
+            mode_xs = unique_xs[counts == counts.max()]
+            x_center = float(mode_xs[np.argmin(np.abs(mode_xs - np.median(xs)))])
+        else:
+            x_center = float(np.median(xs))
+        tops = _max_visual_y(trans, [(float(x), float(y)) for x, y in finite_offsets])
+        out.append(
+            _ArtistGeometry(
+                x_center=x_center,
+                y_top=tops,
+                color=_to_rgba(first),
+                kind="points",
+            )
+        )
     return out
 
 
-def _collect_errorbar_geometry(ax: Axes) -> list[tuple[float, float]]:
-    """Return (x_center, visual_top) for vertical error-bar segments."""
+def _collect_errorbar_geometry(ax: Axes) -> list[_ArtistGeometry]:
+    """Collect vertical error-bar stems."""
     trans = ax.transData
-    out: list[tuple[float, float]] = []
+    out: list[_ArtistGeometry] = []
     for collection in ax.collections:
         if not isinstance(collection, LineCollection):
             continue
         if getattr(collection, "get_gid", lambda: None)() == _ANNOTATION_GID:
             continue
-        for segment in collection.get_segments():
+        colors = collection.get_colors()
+        for segment_index, segment in enumerate(collection.get_segments()):
             arr = np.asarray(segment, dtype=float)
             if arr.ndim != 2 or arr.shape[1] != 2 or len(arr) < 2:
                 continue
             if not np.isfinite(arr).all() or not np.allclose(arr[:, 0], arr[0, 0]):
                 continue
-            out.append((float(arr[0, 0]), _max_visual_y(trans, [tuple(p) for p in arr])))
+            color = None
+            if colors is not None and len(colors) > 0:
+                color = _to_rgba(colors[min(segment_index, len(colors) - 1)])
+            out.append(
+                _ArtistGeometry(
+                    x_center=float(arr[0, 0]),
+                    y_top=_max_visual_y(trans, [tuple(p) for p in arr]),
+                    color=color,
+                    kind="errorbar",
+                )
+            )
     for line in ax.lines:
         if getattr(line, "get_gid", lambda: None)() == _ANNOTATION_GID:
             continue
-        xs = np.asarray(line.get_xdata(), dtype=float)
-        ys = np.asarray(line.get_ydata(), dtype=float)
-        if (
-            len(xs) < 2
-            or len(xs) != len(ys)
-            or not np.isfinite(xs).all()
-            or not np.isfinite(ys).all()
-        ):
+        if _has_marker(line):
             continue
-        if np.allclose(xs, xs[0]):
-            out.append((float(xs[0]), _max_visual_y(trans, list(zip(xs, ys, strict=False)))))
+        try:
+            xs = np.asarray(line.get_xdata(orig=False), dtype=float)
+            ys = np.asarray(line.get_ydata(orig=False), dtype=float)
+        except (TypeError, ValueError):
+            continue
+        if len(xs) < 2 or len(xs) != len(ys):
+            continue
+        finite = np.isfinite(xs) & np.isfinite(ys)
+        start: int | None = None
+        for index, is_finite in enumerate(np.r_[finite, False]):
+            if is_finite and start is None:
+                start = index
+            elif not is_finite and start is not None:
+                _append_errorbar_run(out, trans, xs[start:index], ys[start:index], line)
+                start = None
     return out
+
+
+def _append_errorbar_run(
+    out: list[_ArtistGeometry],
+    trans: Any,
+    xs: np.ndarray,
+    ys: np.ndarray,
+    line: Line2D,
+) -> None:
+    if len(xs) < 2:
+        return
+    points = [(float(x), float(y)) for x, y in zip(xs, ys, strict=False)]
+    color = _preferred_color(line.get_color())
+    if np.allclose(xs, xs[0]):
+        out.append(
+            _ArtistGeometry(
+                x_center=float(xs[0]),
+                y_top=_max_visual_y(trans, points),
+                color=color,
+                kind="errorbar",
+            )
+        )
+
+
+def _is_summary_marker(line: Line2D) -> bool:
+    marker = line.get_marker()
+    return marker not in (None, "", "None", "none", " ", "_", "|")
+
+
+def _has_marker(line: Line2D) -> bool:
+    marker = line.get_marker()
+    return marker not in (None, "", "None", "none", " ")
 
 
 def _max_visual_y(trans: Any, points: list[tuple[float, float]]) -> float:
@@ -953,6 +1103,14 @@ def _max_visual_y(trans: Any, points: list[tuple[float, float]]) -> float:
     arr = np.asarray(points, dtype=float)
     disp = trans.transform(arr)
     return float(np.max(disp[:, 1]))
+
+
+def _preferred_color(*colors: Any) -> tuple[float, float, float, float] | None:
+    for color in colors:
+        rgba = _to_rgba(color)
+        if rgba is not None and rgba[3] > 0:
+            return rgba
+    return None
 
 
 def _to_rgba(color: Any) -> tuple[float, float, float, float] | None:
