@@ -3,6 +3,7 @@ name = "pystars"
 version = "0.1.0"
 description = "Automated significance testing for common biological and life sciences data."
 readme = "README.md"
+license = { text = "MIT" }
 authors = [
     { name = "Luca Masin", email = "luca.masin@kuleuven.be" }
 ]

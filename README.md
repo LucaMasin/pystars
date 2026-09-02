@@ -49,3 +49,7 @@ In Jupyter, `pystars.test?` opens the help panel for any public function.
 See [AGENTS.md](AGENTS.md) for contributor guidance and the
 [Conda + uv environment guide](docs/conda-uv-environment.md) for environment
 setup.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
